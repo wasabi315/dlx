@@ -22,31 +22,141 @@ pub fn solve<L>(subsets: Vec<(L, Vec<usize>)>) -> Option<Vec<L>> {
     })
 }
 
-struct NodeData<'a> {
-    up: Option<Node<'a>>,
-    down: Option<Node<'a>>,
-    left: Option<Node<'a>>,
-    right: Option<Node<'a>>,
-    header: Option<Node<'a>>,
-    col_size: usize,
-    row_ix: isize,
-    col_ix: isize,
-}
+struct Dlx<'a>(Node<'a>);
 
-impl fmt::Debug for NodeData<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "NodeData {{ up: {:p}, down: {:p}, left: {:p}, right: {:p}, header: {:p}, col_size: {}, row_ix: {}, col_ix: {} }}",
-            self.up.unwrap().0,
-            self.down.unwrap().0,
-            self.left.unwrap().0,
-            self.right.unwrap().0,
-            self.header.unwrap().0,
-            self.col_size,
-            self.row_ix,
-            self.col_ix,
-        )
+impl<'a> Dlx<'a> {
+    fn new(arena: &'a NodeArena<'a>, subsets: Vec<Vec<usize>>) -> Self {
+        fn append_row<'a>(row_header: Node<'a>, node: Node<'a>) {
+            *node.right_mut() = row_header;
+            *node.left_mut() = row_header.left();
+            *row_header.left().right_mut() = node;
+            *row_header.left_mut() = node;
+        }
+
+        fn append_column<'a>(col_header: Node<'a>, node: Node<'a>) {
+            col_header.borrow_mut().col_size += 1;
+            *node.header_mut() = col_header;
+            *node.down_mut() = col_header;
+            *node.up_mut() = col_header.up();
+            *col_header.up().down_mut() = node;
+            *col_header.up_mut() = node;
+        }
+
+        let n_col = subsets.iter().flatten().max().unwrap_or(&0) + 1;
+
+        let head = Node::alloc(arena, -1);
+        let mut col_headers = Vec::new();
+
+        for _ in 0..n_col {
+            let col_header = Node::alloc(arena, -1);
+            append_row(head, col_header);
+            col_headers.push(col_header);
+        }
+
+        for (row_ix, row) in subsets.iter().enumerate() {
+            if row.is_empty() {
+                continue;
+            }
+
+            let row_header = Node::alloc(arena, row_ix as isize);
+            let col_header = col_headers[row[0]];
+            append_column(col_header, row_header);
+
+            for col_ix in row[1..].iter().copied() {
+                let node = Node::alloc(arena, row_ix as isize);
+                let col_header = col_headers[col_ix];
+                append_column(col_header, node);
+                append_row(row_header, node);
+            }
+        }
+
+        Dlx(head)
+    }
+
+    fn is_empty(&self) -> bool {
+        self.0 == self.0.right()
+    }
+
+    fn min_size_col(&self) -> (Node<'a>, usize) {
+        self.0
+            .row()
+            .skip(1)
+            .map(|node| (node, node.borrow().col_size))
+            .min_by_key(|(_, col_size)| *col_size)
+            .unwrap()
+    }
+
+    fn cover(&self, selected_node: Node<'a>) {
+        for node in selected_node.row() {
+            let header = node.header();
+            *header.left().right_mut() = header.right();
+            *header.right().left_mut() = header.left();
+
+            for col_node in header.column().skip(1) {
+                for row_node in col_node.row().skip(1) {
+                    *row_node.up().down_mut() = row_node.down();
+                    *row_node.down().up_mut() = row_node.up();
+                    row_node.header().borrow_mut().col_size -= 1;
+                }
+            }
+        }
+    }
+
+    fn uncover(&self, selected_node: Node<'a>) {
+        for node in selected_node.row() {
+            let header = node.header();
+            *header.left().right_mut() = header;
+            *header.right().left_mut() = header;
+
+            for col_node in header.column().skip(1) {
+                for row_node in col_node.row().skip(1) {
+                    *row_node.up().down_mut() = row_node;
+                    *row_node.down().up_mut() = row_node;
+                    row_node.header().borrow_mut().col_size += 1;
+                }
+            }
+        }
+    }
+
+    fn solve(&self) -> Option<Vec<usize>> {
+        enum Status {
+            SolutionFound,
+            Continue,
+        }
+
+        fn solve_sub(dlx: &Dlx, indices: &mut Vec<usize>) -> Status {
+            if dlx.is_empty() {
+                return Status::SolutionFound;
+            }
+
+            let (header, col_size) = dlx.min_size_col();
+
+            if col_size == 0 {
+                return Status::Continue;
+            }
+
+            for node in header.column().skip(1) {
+                indices.push(usize::try_from(node.borrow().row_ix).unwrap());
+
+                dlx.cover(node);
+                if let Status::SolutionFound = solve_sub(dlx, indices) {
+                    return Status::SolutionFound;
+                }
+                dlx.uncover(node);
+
+                indices.pop().unwrap();
+            }
+
+            Status::Continue
+        }
+
+        let mut indices = Vec::new();
+        let status = solve_sub(self, &mut indices);
+        if let Status::SolutionFound = status {
+            Some(indices)
+        } else {
+            None
+        }
     }
 }
 
@@ -55,8 +165,34 @@ struct Node<'a>(&'a RefCell<NodeData<'a>>);
 
 type NodeArena<'a> = Arena<RefCell<NodeData<'a>>>;
 
+struct NodeData<'a> {
+    up: Option<Node<'a>>,
+    down: Option<Node<'a>>,
+    left: Option<Node<'a>>,
+    right: Option<Node<'a>>,
+    header: Option<Node<'a>>,
+    col_size: usize,
+    row_ix: isize,
+}
+
+impl fmt::Debug for NodeData<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "NodeData {{ up: {:p}, down: {:p}, left: {:p}, right: {:p}, header: {:p}, col_size: {}, row_ix: {} }}",
+            self.up.unwrap().0,
+            self.down.unwrap().0,
+            self.left.unwrap().0,
+            self.right.unwrap().0,
+            self.header.unwrap().0,
+            self.col_size,
+            self.row_ix,
+        )
+    }
+}
+
 impl<'a> Node<'a> {
-    fn alloc(arena: &'a NodeArena<'a>, row_ix: isize, col_ix: isize) -> Self {
+    fn alloc(arena: &'a NodeArena<'a>, row_ix: isize) -> Self {
         let node = Node(arena.alloc(RefCell::new(NodeData {
             up: None,
             down: None,
@@ -65,7 +201,6 @@ impl<'a> Node<'a> {
             header: None,
             col_size: 0,
             row_ix,
-            col_ix,
         })));
         node.borrow_mut().up = Some(node);
         node.borrow_mut().down = Some(node);
@@ -175,144 +310,6 @@ impl<'a> Iterator for Column<'a> {
             self.next = if next == self.start { None } else { Some(next) };
             node
         })
-    }
-}
-
-struct Dlx<'a>(Node<'a>);
-
-impl<'a> Dlx<'a> {
-    fn new(arena: &'a NodeArena<'a>, subsets: Vec<Vec<usize>>) -> Self {
-        fn append_row<'a>(row_header: Node<'a>, node: Node<'a>) {
-            *node.right_mut() = row_header;
-            *node.left_mut() = row_header.left();
-            *row_header.left().right_mut() = node;
-            *row_header.left_mut() = node;
-        }
-
-        fn append_column<'a>(col_header: Node<'a>, node: Node<'a>) {
-            col_header.borrow_mut().col_size += 1;
-            *node.header_mut() = col_header;
-            *node.down_mut() = col_header;
-            *node.up_mut() = col_header.up();
-            *col_header.up().down_mut() = node;
-            *col_header.up_mut() = node;
-        }
-
-        let n_col = subsets.iter().flatten().max().unwrap_or(&0) + 1;
-
-        let head = Node::alloc(arena, -1, -1);
-        let mut col_headers = Vec::new();
-
-        for col_ix in 0..n_col {
-            let col_header = Node::alloc(arena, -1, col_ix as isize);
-            append_row(head, col_header);
-            col_headers.push(col_header);
-        }
-
-        for (row_ix, row) in subsets.iter().enumerate() {
-            if row.is_empty() {
-                continue;
-            }
-
-            let row_header = Node::alloc(arena, row_ix as isize, row[0] as isize);
-            let col_header = col_headers[row[0]];
-            append_column(col_header, row_header);
-
-            for col_ix in row[1..].iter().copied() {
-                let node = Node::alloc(arena, row_ix as isize, col_ix as isize);
-                let col_header = col_headers[col_ix];
-                append_column(col_header, node);
-                append_row(row_header, node);
-            }
-        }
-
-        Dlx(head)
-    }
-
-    fn is_empty(&self) -> bool {
-        self.0 == self.0.right()
-    }
-
-    fn min_size_col(&self) -> (Node<'a>, usize) {
-        self.0
-            .row()
-            .skip(1)
-            .map(|node| (node, node.borrow().col_size))
-            .min_by_key(|(_, col_size)| *col_size)
-            .unwrap()
-    }
-
-    fn cover(&self, selected_node: Node<'a>) {
-        for node in selected_node.row() {
-            let header = node.header();
-            *header.left().right_mut() = header.right();
-            *header.right().left_mut() = header.left();
-
-            for col_node in header.column().skip(1) {
-                for row_node in col_node.row().skip(1) {
-                    *row_node.up().down_mut() = row_node.down();
-                    *row_node.down().up_mut() = row_node.up();
-                    row_node.header().borrow_mut().col_size -= 1;
-                }
-            }
-        }
-    }
-
-    fn uncover(&self, selected_node: Node<'a>) {
-        for node in selected_node.row() {
-            let header = node.header();
-            *header.left().right_mut() = header;
-            *header.right().left_mut() = header;
-
-            for col_node in header.column().skip(1) {
-                for row_node in col_node.row().skip(1) {
-                    *row_node.up().down_mut() = row_node;
-                    *row_node.down().up_mut() = row_node;
-                    row_node.header().borrow_mut().col_size += 1;
-                }
-            }
-        }
-    }
-
-    fn solve(&self) -> Option<Vec<usize>> {
-        enum Status {
-            SolutionFound,
-            Continue,
-        }
-
-        fn solve_sub(dlx: &Dlx, indices: &mut Vec<usize>) -> Status {
-            if dlx.is_empty() {
-                return Status::SolutionFound;
-            }
-
-            let (header, col_size) = dlx.min_size_col();
-
-            if col_size == 0 {
-                return Status::Continue;
-            }
-
-            for node in header.column().skip(1) {
-                indices.push(usize::try_from(node.borrow().row_ix).unwrap());
-
-                dlx.cover(node);
-                if let Status::SolutionFound = solve_sub(dlx, indices) {
-                    return Status::SolutionFound;
-                }
-                dlx.uncover(node);
-
-                indices.pop().unwrap();
-            }
-
-            Status::Continue
-        }
-
-        let mut indices = Vec::new();
-        let status = solve_sub(self, &mut indices);
-        if let Status::SolutionFound = status {
-            Some(indices)
-        } else {
-            None
-        }
     }
 }
 
