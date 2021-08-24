@@ -1,0 +1,11 @@
+[package]
+name = "dlx"
+version = "0.1.0"
+authors = ["wasabi315 <wasabi.nvim.st@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+typed-arena = "2.0.1"
+itertools = "0.10.1"
