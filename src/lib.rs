@@ -78,7 +78,7 @@ impl<'a> Dlx<'a> {
 
     fn min_size_col(&self) -> (Node<'a>, usize) {
         self.0
-            .row()
+            .row_right()
             .skip(1)
             .map(|node| (node, node.borrow().size_or_ix))
             .min_by_key(|(_, col_size)| *col_size)
@@ -86,13 +86,13 @@ impl<'a> Dlx<'a> {
     }
 
     fn cover(&self, selected_node: Node<'a>) {
-        for node in selected_node.row() {
+        for node in selected_node.row_right() {
             let header = node.header();
             *header.left().right_mut() = header.right();
             *header.right().left_mut() = header.left();
 
-            for col_node in header.column().skip(1) {
-                for row_node in col_node.row().skip(1) {
+            for col_node in node.column_down().skip(1).filter(|node| node != &header) {
+                for row_node in col_node.row_right().skip(1) {
                     *row_node.up().down_mut() = row_node.down();
                     *row_node.down().up_mut() = row_node.up();
                     row_node.header().borrow_mut().size_or_ix -= 1;
@@ -102,13 +102,13 @@ impl<'a> Dlx<'a> {
     }
 
     fn uncover(&self, selected_node: Node<'a>) {
-        for node in selected_node.row() {
+        for node in selected_node.row_left() {
             let header = node.header();
             *header.left().right_mut() = header;
             *header.right().left_mut() = header;
 
-            for col_node in header.column().skip(1) {
-                for row_node in col_node.row().skip(1) {
+            for col_node in node.column_up().skip(1).filter(|node| node != &header) {
+                for row_node in col_node.row_left().skip(1) {
                     *row_node.up().down_mut() = row_node;
                     *row_node.down().up_mut() = row_node;
                     row_node.header().borrow_mut().size_or_ix += 1;
@@ -134,7 +134,7 @@ impl<'a> Dlx<'a> {
                 return Status::Continue;
             }
 
-            for node in header.column().skip(1) {
+            for node in header.column_down().skip(1) {
                 indices.push(node.borrow().size_or_ix);
 
                 dlx.cover(node);
@@ -264,15 +264,29 @@ impl<'a> Node<'a> {
         RefMut::map(self.0.borrow_mut(), |node| node.header.as_mut().unwrap())
     }
 
-    fn row(&self) -> Row<'a> {
-        Row {
+    fn row_right(&self) -> RowRight<'a> {
+        RowRight {
             start: *self,
             next: Some(*self),
         }
     }
 
-    fn column(&self) -> Column<'a> {
-        Column {
+    fn row_left(&self) -> RowLeft<'a> {
+        RowLeft {
+            start: *self,
+            next: Some(*self),
+        }
+    }
+
+    fn column_down(&self) -> ColumnDown<'a> {
+        ColumnDown {
+            start: *self,
+            next: Some(*self),
+        }
+    }
+
+    fn column_up(&self) -> ColumnUp<'a> {
+        ColumnUp {
             start: *self,
             next: Some(*self),
         }
@@ -285,12 +299,12 @@ impl<'a> PartialEq for Node<'a> {
     }
 }
 
-struct Row<'a> {
+struct RowRight<'a> {
     start: Node<'a>,
     next: Option<Node<'a>>,
 }
 
-impl<'a> Iterator for Row<'a> {
+impl<'a> Iterator for RowRight<'a> {
     type Item = Node<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -302,17 +316,51 @@ impl<'a> Iterator for Row<'a> {
     }
 }
 
-struct Column<'a> {
+struct RowLeft<'a> {
     start: Node<'a>,
     next: Option<Node<'a>>,
 }
 
-impl<'a> Iterator for Column<'a> {
+impl<'a> Iterator for RowLeft<'a> {
+    type Item = Node<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.next.map(|node| {
+            let next = node.left();
+            self.next = if next == self.start { None } else { Some(next) };
+            node
+        })
+    }
+}
+
+struct ColumnDown<'a> {
+    start: Node<'a>,
+    next: Option<Node<'a>>,
+}
+
+impl<'a> Iterator for ColumnDown<'a> {
     type Item = Node<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.next.map(|node| {
             let next = node.down();
+            self.next = if next == self.start { None } else { Some(next) };
+            node
+        })
+    }
+}
+
+struct ColumnUp<'a> {
+    start: Node<'a>,
+    next: Option<Node<'a>>,
+}
+
+impl<'a> Iterator for ColumnUp<'a> {
+    type Item = Node<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.next.map(|node| {
+            let next = node.up();
             self.next = if next == self.start { None } else { Some(next) };
             node
         })
