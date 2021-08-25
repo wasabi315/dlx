@@ -102,7 +102,7 @@ impl<'a> Dlx<'a> {
     }
 
     fn uncover(&self, selected_node: Node<'a>) {
-        for node in selected_node.row_left() {
+        for node in selected_node.left().row_left() {
             let header = node.header();
             *header.left().right_mut() = header;
             *header.right().left_mut() = header;
