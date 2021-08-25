@@ -1,5 +1,4 @@
 use std::cell::{Ref, RefCell, RefMut};
-use std::convert::TryFrom;
 use std::fmt;
 use typed_arena::Arena;
 
@@ -34,7 +33,7 @@ impl<'a> Dlx<'a> {
         }
 
         fn append_column<'a>(col_header: Node<'a>, node: Node<'a>) {
-            col_header.borrow_mut().col_size += 1;
+            col_header.borrow_mut().size_or_ix += 1;
             *node.header_mut() = col_header;
             *node.down_mut() = col_header;
             *node.up_mut() = col_header.up();
@@ -44,11 +43,11 @@ impl<'a> Dlx<'a> {
 
         let n_col = subsets.iter().flatten().max().unwrap_or(&0) + 1;
 
-        let head = Node::alloc(arena, -1);
+        let head = Node::new_header(arena);
         let mut col_headers = Vec::new();
 
         for _ in 0..n_col {
-            let col_header = Node::alloc(arena, -1);
+            let col_header = Node::new_header(arena);
             append_row(head, col_header);
             col_headers.push(col_header);
         }
@@ -58,12 +57,12 @@ impl<'a> Dlx<'a> {
                 continue;
             }
 
-            let row_header = Node::alloc(arena, row_ix as isize);
+            let row_header = Node::new(arena, row_ix);
             let col_header = col_headers[row[0]];
             append_column(col_header, row_header);
 
             for col_ix in row[1..].iter().copied() {
-                let node = Node::alloc(arena, row_ix as isize);
+                let node = Node::new(arena, row_ix);
                 let col_header = col_headers[col_ix];
                 append_column(col_header, node);
                 append_row(row_header, node);
@@ -81,7 +80,7 @@ impl<'a> Dlx<'a> {
         self.0
             .row()
             .skip(1)
-            .map(|node| (node, node.borrow().col_size))
+            .map(|node| (node, node.borrow().size_or_ix))
             .min_by_key(|(_, col_size)| *col_size)
             .unwrap()
     }
@@ -96,7 +95,7 @@ impl<'a> Dlx<'a> {
                 for row_node in col_node.row().skip(1) {
                     *row_node.up().down_mut() = row_node.down();
                     *row_node.down().up_mut() = row_node.up();
-                    row_node.header().borrow_mut().col_size -= 1;
+                    row_node.header().borrow_mut().size_or_ix -= 1;
                 }
             }
         }
@@ -112,7 +111,7 @@ impl<'a> Dlx<'a> {
                 for row_node in col_node.row().skip(1) {
                     *row_node.up().down_mut() = row_node;
                     *row_node.down().up_mut() = row_node;
-                    row_node.header().borrow_mut().col_size += 1;
+                    row_node.header().borrow_mut().size_or_ix += 1;
                 }
             }
         }
@@ -136,7 +135,7 @@ impl<'a> Dlx<'a> {
             }
 
             for node in header.column().skip(1) {
-                indices.push(usize::try_from(node.borrow().row_ix).unwrap());
+                indices.push(node.borrow().size_or_ix);
 
                 dlx.cover(node);
                 if let Status::SolutionFound = solve_sub(dlx, indices) {
@@ -171,36 +170,43 @@ struct NodeData<'a> {
     left: Option<Node<'a>>,
     right: Option<Node<'a>>,
     header: Option<Node<'a>>,
-    col_size: usize,
-    row_ix: isize,
+    // size: the number of nodes in a column (when a node is a column header)
+    // ix: the row index (otherwise)
+    size_or_ix: usize,
 }
 
 impl fmt::Debug for NodeData<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "NodeData {{ up: {:p}, down: {:p}, left: {:p}, right: {:p}, header: {:p}, col_size: {}, row_ix: {} }}",
+            "NodeData {{ up: {:p}, down: {:p}, left: {:p}, right: {:p}, header: {:p}, size_or_ix: {} }}",
             self.up.unwrap().0,
             self.down.unwrap().0,
             self.left.unwrap().0,
             self.right.unwrap().0,
             self.header.unwrap().0,
-            self.col_size,
-            self.row_ix,
+            self.size_or_ix,
         )
     }
 }
 
 impl<'a> Node<'a> {
-    fn alloc(arena: &'a NodeArena<'a>, row_ix: isize) -> Self {
+    fn new_header(arena: &'a NodeArena<'a>) -> Self {
+        Node::alloc(arena, 0)
+    }
+
+    fn new(arena: &'a NodeArena<'a>, row_ix: usize) -> Self {
+        Node::alloc(arena, row_ix)
+    }
+
+    fn alloc(arena: &'a NodeArena<'a>, size_or_ix: usize) -> Self {
         let node = Node(arena.alloc(RefCell::new(NodeData {
             up: None,
             down: None,
             left: None,
             right: None,
             header: None,
-            col_size: 0,
-            row_ix,
+            size_or_ix,
         })));
         node.borrow_mut().up = Some(node);
         node.borrow_mut().down = Some(node);
