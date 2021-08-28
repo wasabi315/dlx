@@ -1,101 +1,107 @@
 use std::cell::{Ref, RefCell, RefMut};
-use std::fmt;
+use std::collections::{HashMap, HashSet};
+use std::hash::Hash;
 use typed_arena::Arena;
 
-pub fn solve<L>(subsets: Vec<(L, Vec<usize>)>) -> Option<Vec<L>> {
-    let (mut labels, subsets): (Vec<Option<L>>, Vec<Vec<usize>>) = subsets
-        .into_iter()
-        .map(|(label, subset)| (Some(label), subset))
-        .unzip();
-
+pub fn solve<L, T, I>(subsets: I) -> Option<Vec<L>>
+where
+    T: Hash + Eq,
+    I: IntoIterator<Item = (L, HashSet<T>)>,
+{
     let arena = Arena::new();
-    let dlx = Dlx::new(&arena, subsets);
+    let mut ecp = Ecp::new(&arena);
 
-    let solution = dlx.solve();
-
-    solution.map(|indices| {
-        indices
-            .into_iter()
-            .map(|i| labels.get_mut(i).unwrap().take().unwrap())
-            .collect()
-    })
-}
-
-struct Dlx<'a>(Node<'a>);
-
-impl<'a> Dlx<'a> {
-    fn new(arena: &'a NodeArena<'a>, subsets: Vec<Vec<usize>>) -> Self {
-        fn append_row<'a>(row_header: Node<'a>, node: Node<'a>) {
-            *node.right_mut() = row_header;
-            *node.left_mut() = row_header.left();
-            *row_header.left().right_mut() = node;
-            *row_header.left_mut() = node;
-        }
-
-        fn append_column<'a>(col_header: Node<'a>, node: Node<'a>) {
-            col_header.borrow_mut().size_or_ix += 1;
-            *node.header_mut() = col_header;
-            *node.down_mut() = col_header;
-            *node.up_mut() = col_header.up();
-            *col_header.up().down_mut() = node;
-            *col_header.up_mut() = node;
-        }
-
-        let n_col = subsets.iter().flatten().max().unwrap_or(&0) + 1;
-
-        let head = Node::new_header(arena);
-        let mut col_headers = Vec::new();
-
-        for _ in 0..n_col {
-            let col_header = Node::new_header(arena);
-            append_row(head, col_header);
-            col_headers.push(col_header);
-        }
-
-        for (row_ix, row) in subsets.iter().enumerate() {
-            if row.is_empty() {
-                continue;
-            }
-
-            let row_header = Node::new(arena, row_ix);
-            let col_header = col_headers[row[0]];
-            append_column(col_header, row_header);
-
-            for col_ix in row[1..].iter().copied() {
-                let node = Node::new(arena, row_ix);
-                let col_header = col_headers[col_ix];
-                append_column(col_header, node);
-                append_row(row_header, node);
-            }
-        }
-
-        Dlx(head)
+    for (label, subset) in subsets {
+        ecp.add_subset(label, subset);
     }
 
-    fn is_empty(&self) -> bool {
-        self.0 == self.0.right()
+    ecp.solve()
+}
+
+struct Ecp<'a, L, T> {
+    arena: &'a Arena<RefCell<NodeData<'a>>>,
+    root: Node<'a>,
+    headers: HashMap<T, Node<'a>>,
+    labels: Vec<L>,
+}
+
+impl<'a, L, T> Ecp<'a, L, T>
+where
+    T: Hash + Eq,
+{
+    fn new(arena: &'a NodeArena<'a>) -> Self {
+        Ecp {
+            arena,
+            root: Node::new_header(arena),
+            headers: HashMap::new(),
+            labels: Vec::new(),
+        }
+    }
+
+    fn add_subset(&mut self, label: L, subset: HashSet<T>) {
+        self.labels.push(label);
+        let row_ix = self.labels.len() - 1;
+
+        let nodes: Vec<Node> = (0..subset.len())
+            .map(|_| Node::new(self.arena, row_ix))
+            .collect();
+
+        let headers = subset.into_iter().map({
+            let arena = self.arena;
+            let root = self.root;
+            move |elem| {
+                let header_entry = self.headers.entry(elem);
+                *header_entry.or_insert_with(|| {
+                    let header = Node::new_header(arena);
+                    *header.right_mut() = root;
+                    *header.left_mut() = root.left();
+                    *root.left().right_mut() = header;
+                    *root.left_mut() = header;
+                    header
+                })
+            }
+        });
+
+        for (header, node) in headers.zip(nodes.iter()) {
+            header.borrow_mut().size_or_ix += 1;
+            *node.header_mut() = header;
+            *node.down_mut() = header;
+            *node.up_mut() = header.up();
+            *header.up().down_mut() = *node;
+            *header.up_mut() = *node;
+        }
+
+        for window in nodes.windows(2) {
+            let node1 = window[0];
+            let node2 = window[1];
+            *node2.left_mut() = node1;
+            *node2.right_mut() = node1.right();
+            *node1.right().left_mut() = node2;
+            *node1.right_mut() = node2;
+        }
+    }
+
+    fn is_solved(&self) -> bool {
+        self.root == self.root.right()
     }
 
     fn min_size_col(&self) -> (Node<'a>, usize) {
-        self.0
+        self.root
             .iter_right()
             .skip(1)
             .map(|node| (node, node.borrow().size_or_ix))
-            .min_by_key(|(_, col_size)| *col_size)
+            .min_by_key(|(_, size)| *size)
             .unwrap()
     }
 
     fn cover(&self, selected_node: Node<'a>) {
         for node in selected_node.iter_right() {
             let header = node.header();
-            *header.left().right_mut() = header.right();
-            *header.right().left_mut() = header.left();
+            header.unlink_lr();
 
             for col_node in node.iter_down().skip(1).filter(|node| node != &header) {
                 for row_node in col_node.iter_right().skip(1) {
-                    *row_node.up().down_mut() = row_node.down();
-                    *row_node.down().up_mut() = row_node.up();
-                    row_node.header().borrow_mut().size_or_ix -= 1;
+                    row_node.unlink_ud();
                 }
             }
         }
@@ -104,66 +110,68 @@ impl<'a> Dlx<'a> {
     fn uncover(&self, selected_node: Node<'a>) {
         for node in selected_node.left().iter_left() {
             let header = node.header();
-            *header.left().right_mut() = header;
-            *header.right().left_mut() = header;
+            header.relink_lr();
 
             for col_node in node.iter_up().skip(1).filter(|node| node != &header) {
                 for row_node in col_node.iter_left().skip(1) {
-                    *row_node.up().down_mut() = row_node;
-                    *row_node.down().up_mut() = row_node;
-                    row_node.header().borrow_mut().size_or_ix += 1;
+                    row_node.relink_ud();
                 }
             }
         }
     }
 
-    fn solve(&self) -> Option<Vec<usize>> {
-        enum Status {
-            SolutionFound,
-            Continue,
+    fn solve_sub(&self, label_indices: &mut HashSet<usize>) -> bool {
+        if self.is_solved() {
+            return true;
         }
 
-        fn solve_sub(dlx: &Dlx, indices: &mut Vec<usize>) -> Status {
-            if dlx.is_empty() {
-                return Status::SolutionFound;
-            }
+        let (header, col_size) = self.min_size_col();
 
-            let (header, col_size) = dlx.min_size_col();
-
-            if col_size == 0 {
-                return Status::Continue;
-            }
-
-            for node in header.iter_down().skip(1) {
-                indices.push(node.borrow().size_or_ix);
-
-                dlx.cover(node);
-                if let Status::SolutionFound = solve_sub(dlx, indices) {
-                    return Status::SolutionFound;
-                }
-                dlx.uncover(node);
-
-                indices.pop().unwrap();
-            }
-
-            Status::Continue
+        if col_size == 0 {
+            return false;
         }
 
-        let mut indices = Vec::new();
-        let status = solve_sub(self, &mut indices);
-        if let Status::SolutionFound = status {
-            Some(indices)
-        } else {
-            None
+        for node in header.iter_down().skip(1) {
+            let ix = node.borrow().size_or_ix;
+            label_indices.insert(ix);
+
+            self.cover(node);
+            if self.solve_sub(label_indices) {
+                return true;
+            }
+            self.uncover(node);
+
+            label_indices.remove(&ix);
         }
+
+        false
+    }
+
+    fn solve(self) -> Option<Vec<L>> {
+        let mut label_indices = HashSet::new();
+        let is_solved = self.solve_sub(&mut label_indices);
+        is_solved.then(|| {
+            self.labels
+                .into_iter()
+                .enumerate()
+                .filter_map(|(i, label)| label_indices.contains(&i).then(|| label))
+                .collect()
+        })
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-struct Node<'a>(&'a RefCell<NodeData<'a>>);
-
 type NodeArena<'a> = Arena<RefCell<NodeData<'a>>>;
 
+#[derive(Clone, Copy)]
+struct Node<'a>(&'a RefCell<NodeData<'a>>);
+
+impl<'a> PartialEq for Node<'a> {
+    fn eq(&self, other: &Node<'a>) -> bool {
+        std::ptr::eq(self.0, other.0)
+    }
+}
+
+#[derive(Clone, Copy)]
 struct NodeData<'a> {
     up: Option<Node<'a>>,
     down: Option<Node<'a>>,
@@ -173,21 +181,6 @@ struct NodeData<'a> {
     // size: the number of nodes in a column (when a node is a column header)
     // ix: the row index (otherwise)
     size_or_ix: usize,
-}
-
-impl fmt::Debug for NodeData<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "NodeData {{ up: {:p}, down: {:p}, left: {:p}, right: {:p}, header: {:p}, size_or_ix: {} }}",
-            self.up.unwrap().0,
-            self.down.unwrap().0,
-            self.left.unwrap().0,
-            self.right.unwrap().0,
-            self.header.unwrap().0,
-            self.size_or_ix,
-        )
-    }
 }
 
 impl<'a> Node<'a> {
@@ -264,6 +257,28 @@ impl<'a> Node<'a> {
         RefMut::map(self.0.borrow_mut(), |node| node.header.as_mut().unwrap())
     }
 
+    fn unlink_ud(&self) {
+        *self.up().down_mut() = self.down();
+        *self.down().up_mut() = self.up();
+        self.header().borrow_mut().size_or_ix -= 1;
+    }
+
+    fn unlink_lr(&self) {
+        *self.left().right_mut() = self.right();
+        *self.right().left_mut() = self.left();
+    }
+
+    fn relink_ud(&self) {
+        *self.up().down_mut() = *self;
+        *self.down().up_mut() = *self;
+        self.header().borrow_mut().size_or_ix += 1;
+    }
+
+    fn relink_lr(&self) {
+        *self.left().right_mut() = *self;
+        *self.right().left_mut() = *self;
+    }
+
     fn iter_up(&self) -> Iter<'a> {
         Iter::new(self, |node| node.up())
     }
@@ -281,16 +296,10 @@ impl<'a> Node<'a> {
     }
 }
 
-impl<'a> PartialEq for Node<'a> {
-    fn eq(&self, other: &Node<'a>) -> bool {
-        std::ptr::eq(self.0, other.0)
-    }
-}
-
 struct Iter<'a> {
     start: Node<'a>,
     next: Option<Node<'a>>,
-    get_next: for<'r> fn(Node<'r>) -> Node<'r>,
+    get_next: fn(Node) -> Node,
 }
 
 impl<'a> Iter<'a> {
@@ -309,7 +318,7 @@ impl<'a> Iterator for Iter<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         self.next.map(|node| {
             let next = (self.get_next)(node);
-            self.next = if next == self.start { None } else { Some(next) };
+            self.next = (next != self.start).then(|| next);
             node
         })
     }
@@ -317,39 +326,18 @@ impl<'a> Iterator for Iter<'a> {
 
 #[cfg(test)]
 mod test {
-    use super::solve;
-
     #[test]
     fn test1() {
         let subsets = vec![
-            ("A", vec![0, 2]),
-            ("B", vec![0, 3, 4]),
-            ("C", vec![1, 3]),
-            ("D", vec![1, 4]),
-            ("E", vec![2, 3]),
-            ("F", vec![4]),
+            ("A", vec![0, 3, 6].into_iter().collect()),
+            ("B", vec![0, 3].into_iter().collect()),
+            ("C", vec![3, 4, 6].into_iter().collect()),
+            ("D", vec![2, 4, 5].into_iter().collect()),
+            ("E", vec![1, 2, 5, 6].into_iter().collect()),
+            ("F", vec![1, 6].into_iter().collect()),
         ];
         assert_eq!(
-            solve(subsets).map(|mut v| {
-                v.sort_unstable();
-                v
-            }),
-            Some(vec!["A", "C", "F"])
-        );
-    }
-
-    #[test]
-    fn test2() {
-        let subsets = vec![
-            ("A", vec![0, 3, 6]),
-            ("B", vec![0, 3]),
-            ("C", vec![3, 4, 6]),
-            ("D", vec![2, 4, 5]),
-            ("E", vec![1, 2, 5, 6]),
-            ("F", vec![1, 6]),
-        ];
-        assert_eq!(
-            solve(subsets).map(|mut v| {
+            super::solve(subsets).map(|mut v| {
                 v.sort_unstable();
                 v
             }),
@@ -358,17 +346,36 @@ mod test {
     }
 
     #[test]
-    fn test3() {
+    fn test2() {
         let subsets = vec![
-            ("A", vec![0, 2]),
-            ("B", vec![0, 3, 4]),
-            ("C", vec![1]),
-            ("D", vec![1, 4]),
-            ("E", vec![2, 3]),
-            ("F", vec![4]),
+            ("A", vec![0, 2].into_iter().collect()),
+            ("B", vec![0, 3, 4].into_iter().collect()),
+            ("C", vec![1, 3].into_iter().collect()),
+            ("D", vec![1, 4].into_iter().collect()),
+            ("E", vec![2, 3].into_iter().collect()),
+            ("F", vec![4].into_iter().collect()),
         ];
         assert_eq!(
-            solve(subsets).map(|mut v| {
+            super::solve(subsets).map(|mut v| {
+                v.sort_unstable();
+                v
+            }),
+            Some(vec!["A", "C", "F"])
+        );
+    }
+
+    #[test]
+    fn test3() {
+        let subsets = vec![
+            ("A", vec![0, 2].into_iter().collect()),
+            ("B", vec![0, 3, 4].into_iter().collect()),
+            ("C", vec![1].into_iter().collect()),
+            ("D", vec![1, 4].into_iter().collect()),
+            ("E", vec![2, 3].into_iter().collect()),
+            ("F", vec![4].into_iter().collect()),
+        ];
+        assert_eq!(
+            super::solve(subsets).map(|mut v| {
                 v.sort_unstable();
                 v
             }),
