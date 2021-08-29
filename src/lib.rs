@@ -3,10 +3,7 @@ use std::fmt;
 use typed_arena::Arena;
 
 pub fn solve<L>(subsets: Vec<(L, Vec<usize>)>) -> Option<Vec<L>> {
-    let (mut labels, subsets): (Vec<Option<L>>, Vec<Vec<usize>>) = subsets
-        .into_iter()
-        .map(|(label, subset)| (Some(label), subset))
-        .unzip();
+    let (labels, subsets): (Vec<L>, Vec<Vec<usize>>) = subsets.into_iter().unzip();
 
     let arena = Arena::new();
     let dlx = Dlx::new(&arena, subsets);
@@ -14,9 +11,10 @@ pub fn solve<L>(subsets: Vec<(L, Vec<usize>)>) -> Option<Vec<L>> {
     let solution = dlx.solve();
 
     solution.map(|indices| {
-        indices
+        labels
             .into_iter()
-            .map(|i| labels.get_mut(i).unwrap().take().unwrap())
+            .enumerate()
+            .filter_map(|(i, elem)| indices.contains(&i).then(|| elem))
             .collect()
     })
 }
