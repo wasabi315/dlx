@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use rustc_hash::FxHashSet;
 use std::convert::TryFrom;
 use std::io::{stdin, stdout, BufRead, BufReader, BufWriter, Write};
 
@@ -36,7 +36,7 @@ enum Constraint {
 }
 
 impl Cell {
-    fn constraints(&self) -> HashSet<Constraint> {
+    fn constraints(&self) -> FxHashSet<Constraint> {
         let bx = 3 * (self.row / 3) + (self.col / 3);
         std::array::IntoIter::new([
             Constraint::RowCol(self.row, self.col),
@@ -54,7 +54,7 @@ fn solve(str: &str) -> Option<String> {
     Some(display(solution))
 }
 
-fn parse(str: &str) -> Option<Vec<(Cell, HashSet<Constraint>)>> {
+fn parse(str: &str) -> Option<Vec<(Cell, FxHashSet<Constraint>)>> {
     if str.len() != 81 {
         return None;
     }

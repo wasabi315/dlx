@@ -1,12 +1,12 @@
+use rustc_hash::{FxHashMap, FxHashSet};
 use std::cell::{Ref, RefCell, RefMut};
-use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 use typed_arena::Arena;
 
 pub fn solve<L, T, I>(subsets: I) -> Option<Vec<L>>
 where
     T: Hash + Eq,
-    I: IntoIterator<Item = (L, HashSet<T>)>,
+    I: IntoIterator<Item = (L, FxHashSet<T>)>,
 {
     let arena = Arena::new();
     let mut ecp = Ecp::new(&arena);
@@ -21,7 +21,7 @@ where
 struct Ecp<'a, L, T> {
     arena: &'a Arena<RefCell<NodeData<'a>>>,
     root: Node<'a>,
-    headers: HashMap<T, Node<'a>>,
+    headers: FxHashMap<T, Node<'a>>,
     labels: Vec<L>,
 }
 
@@ -33,12 +33,12 @@ where
         Ecp {
             arena,
             root: Node::new_header(arena),
-            headers: HashMap::new(),
+            headers: FxHashMap::default(),
             labels: Vec::new(),
         }
     }
 
-    fn add_subset(&mut self, label: L, subset: HashSet<T>) {
+    fn add_subset(&mut self, label: L, subset: FxHashSet<T>) {
         self.labels.push(label);
         let row_ix = self.labels.len() - 1;
 
@@ -120,7 +120,7 @@ where
         }
     }
 
-    fn solve_sub(&self, label_indices: &mut HashSet<usize>) -> bool {
+    fn solve_sub(&self, label_indices: &mut FxHashSet<usize>) -> bool {
         if self.is_solved() {
             return true;
         }
@@ -148,7 +148,7 @@ where
     }
 
     fn solve(self) -> Option<Vec<L>> {
-        let mut label_indices = HashSet::new();
+        let mut label_indices = FxHashSet::default();
         let is_solved = self.solve_sub(&mut label_indices);
         is_solved.then(|| {
             self.labels
