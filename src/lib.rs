@@ -46,38 +46,23 @@ where
             .map(|_| Node::new(self.arena, row_ix))
             .collect();
 
-        let headers = subset.into_iter().map({
-            let arena = self.arena;
-            let root = self.root;
-            move |elem| {
-                let header_entry = self.headers.entry(elem);
-                *header_entry.or_insert_with(|| {
-                    let header = Node::new_header(arena);
-                    *header.right_mut() = root;
-                    *header.left_mut() = root.left();
-                    *root.left().right_mut() = header;
-                    *root.left_mut() = header;
-                    header
-                })
-            }
-        });
-
-        for (header, node) in headers.zip(nodes.iter()) {
-            header.borrow_mut().size_or_ix += 1;
-            *node.header_mut() = header;
-            *node.down_mut() = header;
-            *node.up_mut() = header.up();
-            *header.up().down_mut() = *node;
-            *header.up_mut() = *node;
+        // Link nodes in the same row
+        for window in nodes.windows(2) {
+            window[0].hook_right(window[1]);
         }
 
-        for window in nodes.windows(2) {
-            let node1 = window[0];
-            let node2 = window[1];
-            *node2.left_mut() = node1;
-            *node2.right_mut() = node1.right();
-            *node1.right().left_mut() = node2;
-            *node1.right_mut() = node2;
+        // Link nodes in the same column
+        let arena = self.arena;
+        let root = self.root;
+        for (elem, node) in subset.into_iter().zip(nodes.into_iter()) {
+            let header = *self.headers.entry(elem).or_insert_with(|| {
+                let header = Node::new_header(arena);
+                root.hook_left(header);
+                header
+            });
+            header.borrow_mut().size_or_ix += 1;
+            *node.header_mut() = header;
+            header.hook_up(node);
         }
     }
 
@@ -134,28 +119,29 @@ where
         for node in header.iter_down().skip(1) {
             let ix = node.borrow().size_or_ix;
             label_indices.insert(ix);
-
             self.cover(node);
+
             if self.solve_sub(label_indices) {
                 return true;
             }
-            self.uncover(node);
 
+            self.uncover(node);
             label_indices.remove(&ix);
         }
 
         false
     }
 
-    fn solve(self) -> Option<Vec<L>> {
+    fn solve(mut self) -> Option<Vec<L>> {
         let mut label_indices = FxHashSet::default();
         let is_solved = self.solve_sub(&mut label_indices);
         is_solved.then(|| {
+            let mut i = 0;
+            self.labels.retain(|_| {
+                i += 1;
+                label_indices.contains(&(i - 1))
+            });
             self.labels
-                .into_iter()
-                .enumerate()
-                .filter_map(|(i, label)| label_indices.contains(&i).then(|| label))
-                .collect()
         })
     }
 }
@@ -255,6 +241,40 @@ impl<'a> Node<'a> {
 
     fn header_mut(&self) -> RefMut<'a, Node<'a>> {
         RefMut::map(self.0.borrow_mut(), |node| node.header.as_mut().unwrap())
+    }
+
+    fn hook_up(&self, node: Node<'a>) {
+        if self.header() != node.header() {
+            panic!();
+        }
+        *node.down_mut() = *self;
+        *node.up_mut() = self.up();
+        *self.up().down_mut() = node;
+        *self.up_mut() = node;
+    }
+
+    fn hook_down(&self, node: Node<'a>) {
+        if self.header() != node.header() {
+            panic!();
+        }
+        *node.up_mut() = *self;
+        *node.down_mut() = self.down();
+        *self.down().up_mut() = node;
+        *self.down_mut() = node;
+    }
+
+    fn hook_left(&self, node: Node<'a>) {
+        *node.right_mut() = *self;
+        *node.left_mut() = self.left();
+        *self.left().right_mut() = node;
+        *self.left_mut() = node;
+    }
+
+    fn hook_right(&self, node: Node<'a>) {
+        *node.left_mut() = *self;
+        *node.right_mut() = self.right();
+        *self.right().left_mut() = node;
+        *self.right_mut() = node;
     }
 
     fn unlink_ud(&self) {
