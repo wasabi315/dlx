@@ -60,7 +60,7 @@ where
                 root.hook_left(header);
                 header
             });
-            header.borrow_mut().size_or_ix += 1;
+            *header.size_mut() += 1;
             *node.header_mut() = header;
             header.hook_up(node);
         }
@@ -70,13 +70,18 @@ where
         self.root == self.root.right()
     }
 
-    fn min_size_col(&self) -> (Node<'a>, usize) {
-        self.root
-            .iter_right()
-            .skip(1)
-            .map(|node| (node, node.borrow().size_or_ix))
-            .min_by_key(|(_, size)| *size)
-            .unwrap()
+    fn min_size_col(&self) -> Option<(Node<'a>, usize)> {
+        let mut headers = self.root.iter_right().skip(1);
+
+        let first = headers.next()?;
+        Some(headers.fold((first, first.size()), |min, node| {
+            let size = node.size();
+            if min.1 > size {
+                (node, size)
+            } else {
+                min
+            }
+        }))
     }
 
     fn cover(&self, selected_node: Node<'a>) {
@@ -110,14 +115,14 @@ where
             return true;
         }
 
-        let (header, col_size) = self.min_size_col();
+        let (header, col_size) = self.min_size_col().unwrap();
 
         if col_size == 0 {
             return false;
         }
 
         for node in header.iter_down().skip(1) {
-            let ix = node.borrow().size_or_ix;
+            let ix = node.ix();
             label_indices.insert(ix);
             self.cover(node);
 
@@ -187,20 +192,12 @@ impl<'a> Node<'a> {
             header: None,
             size_or_ix,
         })));
-        node.borrow_mut().up = Some(node);
-        node.borrow_mut().down = Some(node);
-        node.borrow_mut().left = Some(node);
-        node.borrow_mut().right = Some(node);
-        node.borrow_mut().header = Some(node);
+        node.0.borrow_mut().up = Some(node);
+        node.0.borrow_mut().down = Some(node);
+        node.0.borrow_mut().left = Some(node);
+        node.0.borrow_mut().right = Some(node);
+        node.0.borrow_mut().header = Some(node);
         node
-    }
-
-    fn borrow(&self) -> Ref<'a, NodeData<'a>> {
-        self.0.borrow()
-    }
-
-    fn borrow_mut(&self) -> RefMut<'a, NodeData<'a>> {
-        self.0.borrow_mut()
     }
 
     fn up(&self) -> Node<'a> {
@@ -241,6 +238,18 @@ impl<'a> Node<'a> {
 
     fn header_mut(&self) -> RefMut<'a, Node<'a>> {
         RefMut::map(self.0.borrow_mut(), |node| node.header.as_mut().unwrap())
+    }
+
+    fn size(&self) -> usize {
+        self.0.borrow().size_or_ix
+    }
+
+    fn size_mut(&self) -> RefMut<'a, usize> {
+        RefMut::map(self.0.borrow_mut(), |node| &mut node.size_or_ix)
+    }
+
+    fn ix(&self) -> usize {
+        self.0.borrow().size_or_ix
     }
 
     fn hook_up(&self, node: Node<'a>) {
@@ -284,7 +293,7 @@ impl<'a> Node<'a> {
     fn unlink_ud(&self) {
         *self.up().down_mut() = self.down();
         *self.down().up_mut() = self.up();
-        self.header().borrow_mut().size_or_ix -= 1;
+        *self.header().size_mut() -= 1;
     }
 
     fn unlink_lr(&self) {
@@ -295,7 +304,7 @@ impl<'a> Node<'a> {
     fn relink_ud(&self) {
         *self.up().down_mut() = *self;
         *self.down().up_mut() = *self;
-        self.header().borrow_mut().size_or_ix += 1;
+        *self.header().size_mut() += 1;
     }
 
     fn relink_lr(&self) {
