@@ -16,7 +16,7 @@ macro_rules! hashset {
     };
 }
 
-#[macro_export(local_inner_macros)]
+#[macro_export]
 macro_rules! ecp {
     ($($label:expr => $subset:tt,)+) => { ecp!($($label => $subset),+) };
     ($($label:expr => $subset:tt),*) => {

@@ -372,13 +372,7 @@ mod test {
             "E" => {1, 2, 5, 6},
             "F" => {1, 6},
         };
-        assert_eq!(
-            super::solve(ecp).map(|mut v| {
-                v.sort_unstable();
-                v
-            }),
-            Some(vec!["B", "D", "F"])
-        );
+        assert_eq!(super::solve(ecp), Some(vec!["B", "D", "F"]));
     }
 
     #[test]
@@ -391,13 +385,7 @@ mod test {
             "E" => {2, 3},
             "F" => {4},
         };
-        assert_eq!(
-            super::solve(ecp).map(|mut v| {
-                v.sort_unstable();
-                v
-            }),
-            Some(vec!["A", "C", "F"])
-        );
+        assert_eq!(super::solve(ecp), Some(vec!["A", "C", "F"]));
     }
 
     #[test]
@@ -410,12 +398,6 @@ mod test {
             "E" => {2, 3},
             "F" => {4},
         };
-        assert_eq!(
-            super::solve(ecp).map(|mut v| {
-                v.sort_unstable();
-                v
-            }),
-            None,
-        );
+        assert_eq!(super::solve(ecp), None);
     }
 }

@@ -80,8 +80,7 @@ fn parse(str: &str) -> Option<impl Iterator<Item = (Cell, FxHashSet<Constraint>)
     Some(constraints)
 }
 
-fn display(mut board: Vec<Cell>) -> String {
-    board.sort_unstable();
+fn display(board: Vec<Cell>) -> String {
     board
         .into_iter()
         .map(|cell| char::from_digit(u32::try_from(cell.num).unwrap(), 10).unwrap())
