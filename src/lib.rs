@@ -1,5 +1,5 @@
 use rustc_hash::{FxHashMap, FxHashSet};
-use std::cell::{Ref, RefCell, RefMut};
+use std::cell::{RefCell, RefMut};
 use std::hash::Hash;
 use typed_arena::Arena;
 
@@ -19,7 +19,7 @@ where
 }
 
 struct Ecp<'a, L, T> {
-    arena: &'a Arena<RefCell<NodeData<'a>>>,
+    arena: &'a NodeArena<'a>,
     root: Node<'a>,
     headers: FxHashMap<T, Node<'a>>,
     labels: Vec<L>,

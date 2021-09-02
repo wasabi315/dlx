@@ -11,12 +11,11 @@ fn main() {
     let mut out = BufWriter::new(stdout.lock());
 
     for line in lines {
-        writeln!(
-            out,
-            "{}",
-            solve(&line.unwrap()).as_deref().unwrap_or("skip")
-        )
-        .unwrap();
+        if let Some(solution) = solve(&line.unwrap()) {
+            writeln!(out, "{}", solution).unwrap();
+        } else {
+            writeln!(out, "skip").unwrap();
+        }
     }
 }
 
@@ -54,7 +53,7 @@ fn solve(str: &str) -> Option<String> {
     Some(display(solution))
 }
 
-fn parse(str: &str) -> Option<Vec<(Cell, FxHashSet<Constraint>)>> {
+fn parse(str: &str) -> Option<impl Iterator<Item = (Cell, FxHashSet<Constraint>)>> {
     if str.len() != 81 {
         return None;
     }
@@ -76,13 +75,10 @@ fn parse(str: &str) -> Option<Vec<(Cell, FxHashSet<Constraint>)>> {
         }
     }
 
-    let constraints = cells
-        .into_iter()
-        .map(|cell| {
-            let constraints = cell.constraints();
-            (cell, constraints)
-        })
-        .collect();
+    let constraints = cells.into_iter().map(|cell| {
+        let constraints = cell.constraints();
+        (cell, constraints)
+    });
 
     Some(constraints)
 }
