@@ -2,8 +2,6 @@ use rustc_hash::FxHashSet;
 use std::convert::TryFrom;
 use std::io::{stdin, stdout, BufRead, BufReader, BufWriter, Write};
 
-extern crate dlx;
-
 fn main() {
     let stdin = stdin();
     let stdout = stdout();
@@ -37,13 +35,12 @@ enum Constraint {
 impl Cell {
     fn constraints(&self) -> FxHashSet<Constraint> {
         let bx = 3 * (self.row / 3) + (self.col / 3);
-        std::array::IntoIter::new([
+        dlx::hashset! {
             Constraint::RowCol(self.row, self.col),
             Constraint::RowNum(self.row, self.num),
             Constraint::ColNum(self.col, self.num),
             Constraint::BoxNum(bx, self.num),
-        ])
-        .collect()
+        }
     }
 }
 

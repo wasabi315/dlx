@@ -3,6 +3,9 @@ use std::cell::{RefCell, RefMut};
 use std::hash::Hash;
 use typed_arena::Arena;
 
+#[macro_use]
+mod macros;
+
 pub fn solve<L, T, I>(subsets: I) -> Option<Vec<L>>
 where
     T: Hash + Eq,
@@ -361,16 +364,16 @@ impl<'a> Iterator for Iter<'a> {
 mod test {
     #[test]
     fn test1() {
-        let subsets = vec![
-            ("A", vec![0, 3, 6].into_iter().collect()),
-            ("B", vec![0, 3].into_iter().collect()),
-            ("C", vec![3, 4, 6].into_iter().collect()),
-            ("D", vec![2, 4, 5].into_iter().collect()),
-            ("E", vec![1, 2, 5, 6].into_iter().collect()),
-            ("F", vec![1, 6].into_iter().collect()),
-        ];
+        let ecp = ecp! {
+            "A" => {0, 3, 6},
+            "B" => {0, 3},
+            "C" => {3, 4, 6},
+            "D" => {2, 4, 5},
+            "E" => {1, 2, 5, 6},
+            "F" => {1, 6},
+        };
         assert_eq!(
-            super::solve(subsets).map(|mut v| {
+            super::solve(ecp).map(|mut v| {
                 v.sort_unstable();
                 v
             }),
@@ -380,16 +383,16 @@ mod test {
 
     #[test]
     fn test2() {
-        let subsets = vec![
-            ("A", vec![0, 2].into_iter().collect()),
-            ("B", vec![0, 3, 4].into_iter().collect()),
-            ("C", vec![1, 3].into_iter().collect()),
-            ("D", vec![1, 4].into_iter().collect()),
-            ("E", vec![2, 3].into_iter().collect()),
-            ("F", vec![4].into_iter().collect()),
-        ];
+        let ecp = ecp! {
+            "A" => {0, 2},
+            "B" => {0, 3, 4},
+            "C" => {1, 3},
+            "D" => {1, 4},
+            "E" => {2, 3},
+            "F" => {4},
+        };
         assert_eq!(
-            super::solve(subsets).map(|mut v| {
+            super::solve(ecp).map(|mut v| {
                 v.sort_unstable();
                 v
             }),
@@ -399,16 +402,16 @@ mod test {
 
     #[test]
     fn test3() {
-        let subsets = vec![
-            ("A", vec![0, 2].into_iter().collect()),
-            ("B", vec![0, 3, 4].into_iter().collect()),
-            ("C", vec![1].into_iter().collect()),
-            ("D", vec![1, 4].into_iter().collect()),
-            ("E", vec![2, 3].into_iter().collect()),
-            ("F", vec![4].into_iter().collect()),
-        ];
+        let ecp = ecp! {
+            "A" => {0, 2},
+            "B" => {0, 3, 4},
+            "C" => {1},
+            "D" => {1, 4},
+            "E" => {2, 3},
+            "F" => {4},
+        };
         assert_eq!(
-            super::solve(subsets).map(|mut v| {
+            super::solve(ecp).map(|mut v| {
                 v.sort_unstable();
                 v
             }),
