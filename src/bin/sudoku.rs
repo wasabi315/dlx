@@ -61,7 +61,7 @@ fn parse(str: &str) -> Option<impl Iterator<Item = (Cell, FxHashSet<Constraint>)
         let col = i % 9;
         if ch == '.' {
             (1..=9).for_each(|num| cells.push(Cell { row, col, num }));
-        } else if let Some(num) = ch.to_digit(10) {
+        } else if let Some(num @ 1..=9) = ch.to_digit(10) {
             cells.push(Cell {
                 row,
                 col,
