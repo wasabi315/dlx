@@ -47,7 +47,7 @@ impl Cell {
 fn solve(str: &str) -> Option<String> {
     let constraint = parse(str)?;
     let solution = dlx::solve(constraint)?;
-    Some(display(solution))
+    Some(display(&solution))
 }
 
 fn parse(str: &str) -> Option<impl Iterator<Item = (Cell, FxHashSet<Constraint>)>> {
@@ -80,9 +80,9 @@ fn parse(str: &str) -> Option<impl Iterator<Item = (Cell, FxHashSet<Constraint>)
     Some(constraints)
 }
 
-fn display(board: Vec<Cell>) -> String {
+fn display(board: &[Cell]) -> String {
     board
-        .into_iter()
+        .iter()
         .map(|cell| char::from_digit(u32::try_from(cell.num).unwrap(), 10).unwrap())
         .collect()
 }
