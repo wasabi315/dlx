@@ -1,6 +1,6 @@
+use rustc_hash::FxHashSet;
+use std::convert::TryFrom;
 use std::io::{stdin, stdout, BufRead, BufReader, BufWriter, Write};
-
-extern crate dlx;
 
 fn main() {
     let stdin = stdin();
@@ -9,58 +9,80 @@ fn main() {
     let mut out = BufWriter::new(stdout.lock());
 
     for line in lines {
-        let result = read_board(&line.unwrap()).and_then(dlx::solve);
-
-        if let Some(result) = result {
-            write_board(result, &mut out);
+        if let Some(solution) = solve(&line.unwrap()) {
+            writeln!(out, "{}", solution).unwrap();
         } else {
             writeln!(out, "skip").unwrap();
         }
     }
 }
 
-type Cell = (u8, u8);
+#[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
+struct Cell {
+    row: usize,
+    col: usize,
+    num: usize,
+}
 
-fn read_board(line: &str) -> Option<Vec<(Cell, Vec<usize>)>> {
-    if line.len() != 81 {
+#[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
+enum Constraint {
+    RowCol(usize, usize),
+    RowNum(usize, usize),
+    ColNum(usize, usize),
+    BoxNum(usize, usize),
+}
+
+impl Cell {
+    fn constraints(&self) -> FxHashSet<Constraint> {
+        let bx = 3 * (self.row / 3) + (self.col / 3);
+        dlx::hashset! {
+            Constraint::RowCol(self.row, self.col),
+            Constraint::RowNum(self.row, self.num),
+            Constraint::ColNum(self.col, self.num),
+            Constraint::BoxNum(bx, self.num),
+        }
+    }
+}
+
+fn solve(str: &str) -> Option<String> {
+    let constraint = parse(str)?;
+    let solution = dlx::solve(constraint)?;
+    Some(display(&solution))
+}
+
+fn parse(str: &str) -> Option<impl Iterator<Item = (Cell, FxHashSet<Constraint>)>> {
+    if str.len() != 81 {
         return None;
     }
 
-    let mut constraint = Vec::new();
-
-    for (ix, ch) in line.chars().enumerate() {
+    let mut cells = Vec::new();
+    for (i, ch) in str.chars().enumerate() {
+        let row = i / 9;
+        let col = i % 9;
         if ch == '.' {
-            // empty cell
-            (1..=9).for_each(|num| add_constraint(ix as u8, num, &mut constraint));
-        } else if let Some(num) = ch.to_digit(10) {
-            // filled cell
-            add_constraint(ix as u8, num as u8, &mut constraint);
+            (1..=9).for_each(|num| cells.push(Cell { row, col, num }));
+        } else if let Some(num @ 1..=9) = ch.to_digit(10) {
+            cells.push(Cell {
+                row,
+                col,
+                num: num as usize,
+            });
         } else {
             return None;
         }
     }
 
-    Some(constraint)
-}
-
-fn add_constraint(ix: u8, num: u8, constraints: &mut Vec<(Cell, Vec<usize>)>) {
-    let num_ix = (num - 1) as usize;
-    let row_ix = (ix / 9) as usize;
-    let col_ix = (ix % 9) as usize;
-    let subgrid_ix = (3 * (row_ix / 3) + (col_ix / 3)) as usize;
-
-    let row_col = ix as usize;
-    let row_num = 9 * row_ix + num_ix + 81;
-    let col_num = 9 * col_ix + num_ix + 162;
-    let subgrid_num = 9 * subgrid_ix + num_ix + 243;
-
-    constraints.push(((ix, num), vec![row_col, row_num, col_num, subgrid_num]));
-}
-
-fn write_board(mut board: Vec<Cell>, out: &mut impl Write) {
-    board.sort_unstable();
-    board.into_iter().for_each(|(_, n)| {
-        write!(out, "{}", n).unwrap();
+    let constraints = cells.into_iter().map(|cell| {
+        let constraints = cell.constraints();
+        (cell, constraints)
     });
-    writeln!(out).unwrap();
+
+    Some(constraints)
+}
+
+fn display(board: &[Cell]) -> String {
+    board
+        .iter()
+        .map(|cell| char::from_digit(u32::try_from(cell.num).unwrap(), 10).unwrap())
+        .collect()
 }
