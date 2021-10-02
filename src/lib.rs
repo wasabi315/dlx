@@ -1,6 +1,7 @@
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::cell::{RefCell, RefMut};
 use std::hash::Hash;
+use std::ops::ControlFlow;
 use typed_arena::Arena;
 
 #[macro_use]
@@ -28,10 +29,7 @@ struct Ecp<'a, L, T> {
     labels: Vec<L>,
 }
 
-impl<'a, L, T> Ecp<'a, L, T>
-where
-    T: Hash + Eq,
-{
+impl<'a, L, T> Ecp<'a, L, T> {
     fn new(arena: &'a NodeArena<'a>) -> Self {
         Ecp {
             arena,
@@ -40,7 +38,12 @@ where
             labels: Vec::new(),
         }
     }
+}
 
+impl<'a, L, T> Ecp<'a, L, T>
+where
+    T: Hash + Eq,
+{
     fn add_subset(&mut self, label: L, subset: FxHashSet<T>) {
         self.labels.push(label);
         let row_ix = self.labels.len() - 1;
@@ -50,8 +53,8 @@ where
             .collect();
 
         // Link nodes in the same row
-        for window in nodes.windows(2) {
-            window[0].hook_right(window[1]);
+        for adj_nodes in nodes.windows(2) {
+            adj_nodes[0].hook_right(adj_nodes[1]);
         }
 
         // Link nodes in the same column
@@ -68,7 +71,9 @@ where
             header.hook_up(node);
         }
     }
+}
 
+impl<'a, L, T> Ecp<'a, L, T> {
     fn is_solved(&self) -> bool {
         self.root == self.root.right()
     }
@@ -113,15 +118,15 @@ where
         }
     }
 
-    fn solve_sub(&self, label_indices: &mut FxHashSet<usize>) -> bool {
+    fn solve_sub(&self, label_indices: &mut FxHashSet<usize>) -> ControlFlow<()> {
         if self.is_solved() {
-            return true;
+            return ControlFlow::Break(());
         }
 
         let (header, col_size) = self.min_size_col().unwrap();
 
         if col_size == 0 {
-            return false;
+            return ControlFlow::Continue(());
         }
 
         for node in header.iter_down().skip(1) {
@@ -129,28 +134,28 @@ where
             label_indices.insert(ix);
             self.cover(node);
 
-            if self.solve_sub(label_indices) {
-                return true;
-            }
+            self.solve_sub(label_indices)?;
 
             self.uncover(node);
             label_indices.remove(&ix);
         }
 
-        false
+        ControlFlow::Continue(())
     }
 
     fn solve(mut self) -> Option<Vec<L>> {
         let mut label_indices = FxHashSet::default();
-        let is_solved = self.solve_sub(&mut label_indices);
-        is_solved.then(|| {
-            let mut i = 0;
-            self.labels.retain(|_| {
-                i += 1;
-                label_indices.contains(&(i - 1))
-            });
-            self.labels
-        })
+        match self.solve_sub(&mut label_indices) {
+            ControlFlow::Continue(_) => None,
+            ControlFlow::Break(_) => {
+                let mut i = 0;
+                self.labels.retain(|_| {
+                    i += 1;
+                    label_indices.contains(&(i - 1))
+                });
+                Some(self.labels)
+            }
+        }
     }
 }
 
