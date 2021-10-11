@@ -208,57 +208,39 @@ impl<'a> Node<'a> {
         node.0.borrow_mut().header = Some(node);
         node
     }
+}
 
-    fn up(&self) -> Node<'a> {
-        self.0.borrow().up.unwrap()
-    }
+macro_rules! define_node_accessors {
+    ($acc_name:ident, $mut_acc_name:ident) => {
+        impl<'a> Node<'a> {
+            fn $acc_name(&self) -> Node<'a> {
+                self.0.borrow().$acc_name.unwrap()
+            }
 
-    fn down(&self) -> Node<'a> {
-        self.0.borrow().down.unwrap()
-    }
+            fn $mut_acc_name(&self) -> impl DerefMut<Target = Node<'a>> {
+                RefMut::map(self.0.borrow_mut(), |node| node.$acc_name.as_mut().unwrap())
+            }
+        }
+    };
+}
 
-    fn left(&self) -> Node<'a> {
-        self.0.borrow().left.unwrap()
-    }
+define_node_accessors! { up, up_mut }
+define_node_accessors! { down, down_mut }
+define_node_accessors! { left, left_mut }
+define_node_accessors! { right, right_mut }
+define_node_accessors! { header, header_mut }
 
-    fn right(&self) -> Node<'a> {
-        self.0.borrow().right.unwrap()
-    }
-
-    fn header(&self) -> Node<'a> {
-        self.0.borrow().header.unwrap()
-    }
-
+impl<'a> Node<'a> {
     fn size(&self) -> usize {
         self.0.borrow().size_or_ix
     }
 
-    fn ix(&self) -> usize {
-        self.0.borrow().size_or_ix
-    }
-
-    fn up_mut(&self) -> impl DerefMut<Target = Node<'a>> {
-        RefMut::map(self.0.borrow_mut(), |node| node.up.as_mut().unwrap())
-    }
-
-    fn down_mut(&self) -> impl DerefMut<Target = Node<'a>> {
-        RefMut::map(self.0.borrow_mut(), |node| node.down.as_mut().unwrap())
-    }
-
-    fn left_mut(&self) -> impl DerefMut<Target = Node<'a>> {
-        RefMut::map(self.0.borrow_mut(), |node| node.left.as_mut().unwrap())
-    }
-
-    fn right_mut(&self) -> impl DerefMut<Target = Node<'a>> {
-        RefMut::map(self.0.borrow_mut(), |node| node.right.as_mut().unwrap())
-    }
-
-    fn header_mut(&self) -> impl DerefMut<Target = Node<'a>> {
-        RefMut::map(self.0.borrow_mut(), |node| node.header.as_mut().unwrap())
-    }
-
     fn size_mut(&self) -> impl DerefMut<Target = usize> + 'a {
         RefMut::map(self.0.borrow_mut(), |node| &mut node.size_or_ix)
+    }
+
+    fn ix(&self) -> usize {
+        self.0.borrow().size_or_ix
     }
 
     fn hook_up(&self, node: Node<'a>) {
@@ -320,51 +302,42 @@ impl<'a> Node<'a> {
         *self.left().right_mut() = *self;
         *self.right().left_mut() = *self;
     }
-
-    fn iter_up(&self) -> Iter<'a> {
-        Iter::new(self, |node| node.up())
-    }
-
-    fn iter_down(&self) -> Iter<'a> {
-        Iter::new(self, |node| node.down())
-    }
-
-    fn iter_left(&self) -> Iter<'a> {
-        Iter::new(self, |node| node.left())
-    }
-
-    fn iter_right(&self) -> Iter<'a> {
-        Iter::new(self, |node| node.right())
-    }
 }
 
-struct Iter<'a> {
-    start: Node<'a>,
-    next: Option<Node<'a>>,
-    get_next: fn(Node) -> Node,
-}
-
-impl<'a> Iter<'a> {
-    fn new(node: &Node<'a>, get_next: fn(Node) -> Node) -> Self {
-        Iter {
-            start: *node,
-            next: Some(*node),
-            get_next,
+macro_rules! define_node_iterator {
+    ($iter_method_name:ident, $iter_struct_name:ident, $next:ident) => {
+        struct $iter_struct_name<'a> {
+            start: Node<'a>,
+            next: Option<Node<'a>>,
         }
-    }
+
+        impl<'a> Iterator for $iter_struct_name<'a> {
+            type Item = Node<'a>;
+
+            fn next(&mut self) -> Option<Self::Item> {
+                self.next.map(|node| {
+                    let next = node.$next();
+                    self.next = (next != self.start).then(|| next);
+                    node
+                })
+            }
+        }
+
+        impl<'a> Node<'a> {
+            fn $iter_method_name(&self) -> $iter_struct_name<'a> {
+                $iter_struct_name {
+                    start: *self,
+                    next: Some(*self),
+                }
+            }
+        }
+    };
 }
 
-impl<'a> Iterator for Iter<'a> {
-    type Item = Node<'a>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.next.map(|node| {
-            let next = (self.get_next)(node);
-            self.next = (next != self.start).then(|| next);
-            node
-        })
-    }
-}
+define_node_iterator! { iter_up, IterUp, up }
+define_node_iterator! { iter_down, IterDown, down }
+define_node_iterator! { iter_left, IterLeft, left }
+define_node_iterator! { iter_right, IterRight, right }
 
 #[cfg(test)]
 mod test {
