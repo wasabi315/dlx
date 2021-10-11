@@ -2,6 +2,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use std::cell::{RefCell, RefMut};
 use std::hash::Hash;
 use std::ops::ControlFlow;
+use std::ops::DerefMut;
 use typed_arena::Arena;
 
 #[macro_use]
@@ -212,52 +213,52 @@ impl<'a> Node<'a> {
         self.0.borrow().up.unwrap()
     }
 
-    fn up_mut(&self) -> RefMut<'a, Node<'a>> {
-        RefMut::map(self.0.borrow_mut(), |node| node.up.as_mut().unwrap())
-    }
-
     fn down(&self) -> Node<'a> {
         self.0.borrow().down.unwrap()
-    }
-
-    fn down_mut(&self) -> RefMut<'a, Node<'a>> {
-        RefMut::map(self.0.borrow_mut(), |node| node.down.as_mut().unwrap())
     }
 
     fn left(&self) -> Node<'a> {
         self.0.borrow().left.unwrap()
     }
 
-    fn left_mut(&self) -> RefMut<'a, Node<'a>> {
-        RefMut::map(self.0.borrow_mut(), |node| node.left.as_mut().unwrap())
-    }
-
     fn right(&self) -> Node<'a> {
         self.0.borrow().right.unwrap()
-    }
-
-    fn right_mut(&self) -> RefMut<'a, Node<'a>> {
-        RefMut::map(self.0.borrow_mut(), |node| node.right.as_mut().unwrap())
     }
 
     fn header(&self) -> Node<'a> {
         self.0.borrow().header.unwrap()
     }
 
-    fn header_mut(&self) -> RefMut<'a, Node<'a>> {
-        RefMut::map(self.0.borrow_mut(), |node| node.header.as_mut().unwrap())
-    }
-
     fn size(&self) -> usize {
         self.0.borrow().size_or_ix
     }
 
-    fn size_mut(&self) -> RefMut<'a, usize> {
-        RefMut::map(self.0.borrow_mut(), |node| &mut node.size_or_ix)
-    }
-
     fn ix(&self) -> usize {
         self.0.borrow().size_or_ix
+    }
+
+    fn up_mut(&self) -> impl DerefMut<Target = Node<'a>> {
+        RefMut::map(self.0.borrow_mut(), |node| node.up.as_mut().unwrap())
+    }
+
+    fn down_mut(&self) -> impl DerefMut<Target = Node<'a>> {
+        RefMut::map(self.0.borrow_mut(), |node| node.down.as_mut().unwrap())
+    }
+
+    fn left_mut(&self) -> impl DerefMut<Target = Node<'a>> {
+        RefMut::map(self.0.borrow_mut(), |node| node.left.as_mut().unwrap())
+    }
+
+    fn right_mut(&self) -> impl DerefMut<Target = Node<'a>> {
+        RefMut::map(self.0.borrow_mut(), |node| node.right.as_mut().unwrap())
+    }
+
+    fn header_mut(&self) -> impl DerefMut<Target = Node<'a>> {
+        RefMut::map(self.0.borrow_mut(), |node| node.header.as_mut().unwrap())
+    }
+
+    fn size_mut(&self) -> impl DerefMut<Target = usize> + 'a {
+        RefMut::map(self.0.borrow_mut(), |node| &mut node.size_or_ix)
     }
 
     fn hook_up(&self, node: Node<'a>) {
