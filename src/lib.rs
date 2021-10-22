@@ -49,22 +49,20 @@ where
         self.labels.push(label);
         let row_ix = self.labels.len() - 1;
 
-        let nodes: Vec<Node> = (0..subset.len())
-            .map(|_| Node::new(self.arena, row_ix))
-            .collect();
+        let mut adj_node: Option<Node> = None;
+        for elem in subset {
+            let node = Node::new(self.arena, row_ix);
 
-        // Link nodes in the same row
-        for adj_nodes in nodes.windows(2) {
-            adj_nodes[0].hook_right(adj_nodes[1]);
-        }
+            // Link nodes in a same row
+            if let Some(adj_node) = adj_node {
+                adj_node.hook_right(node);
+            }
+            adj_node = Some(node);
 
-        // Link nodes in the same column
-        let arena = self.arena;
-        let root = self.root;
-        for (elem, node) in subset.into_iter().zip(nodes.into_iter()) {
+            // Link node in a same column
             let header = *self.headers.entry(elem).or_insert_with(|| {
-                let header = Node::new_header(arena);
-                root.hook_left(header);
+                let header = Node::new_header(self.arena);
+                self.root.hook_left(header);
                 header
             });
             *header.size_mut() += 1;
