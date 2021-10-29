@@ -242,10 +242,7 @@ impl<'a> Node<'a> {
     }
 
     fn hook_up(&self, node: Node<'a>) {
-        #[cfg(debug_assertions)]
-        if self.header() != node.header() {
-            panic!();
-        }
+        debug_assert!(self.header() == node.header());
 
         *node.down_mut() = *self;
         *node.up_mut() = self.up();
@@ -254,10 +251,7 @@ impl<'a> Node<'a> {
     }
 
     fn hook_down(&self, node: Node<'a>) {
-        #[cfg(debug_assertions)]
-        if self.header() != node.header() {
-            panic!();
-        }
+        debug_assert!(self.header() == node.header());
 
         *node.up_mut() = *self;
         *node.down_mut() = self.down();
