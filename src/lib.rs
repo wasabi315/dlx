@@ -1,51 +1,56 @@
-use rustc_hash::{FxHashMap, FxHashSet};
+use bit_set::BitSet;
+use rustc_hash::FxHashMap;
 use std::cell::{RefCell, RefMut};
+use std::collections::HashSet;
 use std::hash::Hash;
 use std::ops::ControlFlow;
 use std::ops::DerefMut;
 use typed_arena::Arena;
 
-#[macro_use]
-mod macros;
-
-pub fn solve<L, T, I>(subsets: I) -> Option<Vec<L>>
+pub fn solve<L, T, S>(subsets: impl IntoIterator<Item = (L, HashSet<T, S>)>) -> Option<Vec<L>>
 where
     T: Hash + Eq,
-    I: IntoIterator<Item = (L, FxHashSet<T>)>,
 {
     let arena = Arena::new();
-    let mut ecp = Ecp::new(&arena);
+    let mut builder = EcpBuilder::new(&arena);
 
     for (label, subset) in subsets {
-        ecp.add_subset(label, subset);
+        builder.add_subset(label, subset);
     }
 
-    ecp.solve()
+    builder.build().solve()
 }
 
-struct Ecp<'a, L, T> {
+struct EcpBuilder<'a, L, T> {
+    headers: FxHashMap<T, Node<'a>>,
     arena: &'a NodeArena<'a>,
     root: Node<'a>,
-    headers: FxHashMap<T, Node<'a>>,
     labels: Vec<L>,
 }
 
-impl<'a, L, T> Ecp<'a, L, T> {
+impl<'a, L, T> EcpBuilder<'a, L, T> {
     fn new(arena: &'a NodeArena<'a>) -> Self {
-        Ecp {
+        EcpBuilder {
+            headers: FxHashMap::default(),
             arena,
             root: Node::new_header(arena),
-            headers: FxHashMap::default(),
             labels: Vec::new(),
+        }
+    }
+
+    fn build(self) -> Ecp<'a, L> {
+        Ecp {
+            root: self.root,
+            labels: self.labels,
         }
     }
 }
 
-impl<'a, L, T> Ecp<'a, L, T>
+impl<'a, L, T> EcpBuilder<'a, L, T>
 where
     T: Hash + Eq,
 {
-    fn add_subset(&mut self, label: L, subset: FxHashSet<T>) {
+    fn add_subset<S>(&mut self, label: L, subset: HashSet<T, S>) {
         self.labels.push(label);
         let row_ix = self.labels.len() - 1;
 
@@ -72,23 +77,21 @@ where
     }
 }
 
-impl<'a, L, T> Ecp<'a, L, T> {
+struct Ecp<'a, L> {
+    root: Node<'a>,
+    labels: Vec<L>,
+}
+
+impl<'a, L> Ecp<'a, L> {
     fn is_solved(&self) -> bool {
         self.root == self.root.right()
     }
 
     fn min_size_col(&self) -> Option<(Node<'a>, usize)> {
-        let mut headers = self.root.iter_right().skip(1);
-
-        let first = headers.next()?;
-        Some(headers.fold((first, first.size()), |min, node| {
-            let size = node.size();
-            if min.1 > size {
-                (node, size)
-            } else {
-                min
-            }
-        }))
+        let headers = self.root.iter_right().skip(1);
+        headers
+            .map(|header| (header, header.size()))
+            .min_by(|(_, size0), (_, size1)| size0.cmp(size1))
     }
 
     fn cover(&self, selected_node: Node<'a>) {
@@ -117,44 +120,41 @@ impl<'a, L, T> Ecp<'a, L, T> {
         }
     }
 
-    fn solve_sub(&self, label_indices: &mut FxHashSet<usize>) -> ControlFlow<()> {
-        if self.is_solved() {
-            return ControlFlow::Break(());
-        }
-
-        let (header, col_size) = self.min_size_col().unwrap();
-
-        if col_size == 0 {
-            return ControlFlow::Continue(());
-        }
-
-        for node in header.iter_down().skip(1) {
-            let ix = node.ix();
-            label_indices.insert(ix);
-            self.cover(node);
-
-            self.solve_sub(label_indices)?;
-
-            self.uncover(node);
-            label_indices.remove(&ix);
-        }
-
-        ControlFlow::Continue(())
-    }
-
     fn solve(mut self) -> Option<Vec<L>> {
-        let mut label_indices = FxHashSet::default();
-        match self.solve_sub(&mut label_indices) {
-            ControlFlow::Continue(_) => None,
-            ControlFlow::Break(_) => {
-                let mut i = 0;
-                self.labels.retain(|_| {
-                    i += 1;
-                    label_indices.contains(&(i - 1))
-                });
-                Some(self.labels)
+        fn solve_sub<L>(ecp: &Ecp<L>, label_indices: &mut BitSet) -> ControlFlow<()> {
+            if ecp.is_solved() {
+                return ControlFlow::Break(());
             }
+
+            let (header, col_size) = ecp.min_size_col().unwrap();
+
+            if col_size == 0 {
+                return ControlFlow::Continue(());
+            }
+
+            for node in header.iter_down().skip(1) {
+                let ix = node.ix();
+                label_indices.insert(ix);
+                ecp.cover(node);
+
+                solve_sub(ecp, label_indices)?;
+
+                ecp.uncover(node);
+                label_indices.remove(ix);
+            }
+
+            ControlFlow::Continue(())
         }
+
+        let mut label_indices = BitSet::with_capacity(self.labels.len());
+        solve_sub(&self, &mut label_indices).is_break().then(|| {
+            let mut i = 0;
+            self.labels.retain(|_| {
+                i += 1;
+                label_indices.contains(i - 1)
+            });
+            self.labels
+        })
     }
 }
 
@@ -208,8 +208,8 @@ impl<'a> Node<'a> {
     }
 }
 
-macro_rules! define_node_accessors {
-    ($acc_name:ident, $mut_acc_name:ident) => {
+macro_rules! define_node_getters {
+    (get: $acc_name:ident, get_mut: $mut_acc_name:ident) => {
         impl<'a> Node<'a> {
             fn $acc_name(&self) -> Node<'a> {
                 self.0.borrow().$acc_name.unwrap()
@@ -222,11 +222,11 @@ macro_rules! define_node_accessors {
     };
 }
 
-define_node_accessors! { up, up_mut }
-define_node_accessors! { down, down_mut }
-define_node_accessors! { left, left_mut }
-define_node_accessors! { right, right_mut }
-define_node_accessors! { header, header_mut }
+define_node_getters! { get: up, get_mut: up_mut }
+define_node_getters! { get: down, get_mut: down_mut }
+define_node_getters! { get: left, get_mut: left_mut }
+define_node_getters! { get: right, get_mut: right_mut }
+define_node_getters! { get: header, get_mut: header_mut }
 
 impl<'a> Node<'a> {
     fn size(&self) -> usize {
@@ -248,15 +248,6 @@ impl<'a> Node<'a> {
         *node.up_mut() = self.up();
         *self.up().down_mut() = node;
         *self.up_mut() = node;
-    }
-
-    fn hook_down(&self, node: Node<'a>) {
-        debug_assert!(self.header() == node.header());
-
-        *node.up_mut() = *self;
-        *node.down_mut() = self.down();
-        *self.down().up_mut() = node;
-        *self.down_mut() = node;
     }
 
     fn hook_left(&self, node: Node<'a>) {
@@ -297,7 +288,7 @@ impl<'a> Node<'a> {
 }
 
 macro_rules! define_node_iterator {
-    ($iter_method_name:ident, $iter_struct_name:ident, $next:ident) => {
+    ($iter_method_name:ident: $iter_struct_name:ident { $next:ident }) => {
         struct $iter_struct_name<'a> {
             start: Node<'a>,
             next: Option<Node<'a>>,
@@ -326,48 +317,54 @@ macro_rules! define_node_iterator {
     };
 }
 
-define_node_iterator! { iter_up, IterUp, up }
-define_node_iterator! { iter_down, IterDown, down }
-define_node_iterator! { iter_left, IterLeft, left }
-define_node_iterator! { iter_right, IterRight, right }
+define_node_iterator! { iter_up: IterUp { up } }
+define_node_iterator! { iter_down: IterDown { down } }
+define_node_iterator! { iter_left: IterLeft { left } }
+define_node_iterator! { iter_right: IterRight { right } }
 
 #[cfg(test)]
 mod test {
+    macro_rules! ecp {
+        ($($label:expr => {$($elem:expr),*},)*) => {
+            [$(($label, ::std::collections::HashSet::from([$($elem),*]))),*]
+        };
+    }
+
     #[test]
     fn test1() {
         let ecp = ecp! {
-            "A" => {0, 3, 6},
-            "B" => {0, 3},
-            "C" => {3, 4, 6},
-            "D" => {2, 4, 5},
-            "E" => {1, 2, 5, 6},
-            "F" => {1, 6},
+            'A' => {0, 3, 6},
+            'B' => {0, 3},
+            'C' => {3, 4, 6},
+            'D' => {2, 4, 5},
+            'E' => {1, 2, 5, 6},
+            'F' => {1, 6},
         };
-        assert_eq!(super::solve(ecp), Some(vec!["B", "D", "F"]));
+        assert_eq!(super::solve(ecp), Some(vec!['B', 'D', 'F']));
     }
 
     #[test]
     fn test2() {
         let ecp = ecp! {
-            "A" => {0, 2},
-            "B" => {0, 3, 4},
-            "C" => {1, 3},
-            "D" => {1, 4},
-            "E" => {2, 3},
-            "F" => {4},
+           0 => {0, 2}, // *
+           1 => {0, 3, 4},
+           0 => {1, 3}, // *
+           1 => {1, 4},
+           0 => {2, 3},
+           1 => {4}, // *
         };
-        assert_eq!(super::solve(ecp), Some(vec!["A", "C", "F"]));
+        assert_eq!(super::solve(ecp), Some(vec![0, 0, 1]));
     }
 
     #[test]
     fn test3() {
         let ecp = ecp! {
-            "A" => {0, 2},
-            "B" => {0, 3, 4},
-            "C" => {1},
-            "D" => {1, 4},
-            "E" => {2, 3},
-            "F" => {4},
+            () => {0, 2},
+            () => {0, 3, 4},
+            () => {1},
+            () => {1, 4},
+            () => {2, 3},
+            () => {4},
         };
         assert_eq!(super::solve(ecp), None);
     }

@@ -1,18 +1,16 @@
 use rustc_hash::FxHashSet;
-use std::convert::TryFrom;
+use std::collections::HashSet;
 use std::io::{stdin, stdout, BufRead, BufReader, BufWriter, Write};
 
 fn main() {
-    let stdin = stdin();
-    let stdout = stdout();
-    let lines = BufReader::new(stdin.lock()).lines();
-    let mut out = BufWriter::new(stdout.lock());
+    let lines = BufReader::new(stdin().lock()).lines();
+    let mut out = BufWriter::new(stdout().lock());
 
     for line in lines {
         if let Some(solution) = solve(&line.unwrap()) {
             writeln!(out, "{}", solution).unwrap();
         } else {
-            writeln!(out, "skip").unwrap();
+            writeln!(out, "no solution").unwrap();
         }
     }
 }
@@ -35,12 +33,15 @@ enum Constraint {
 impl Cell {
     fn constraints(&self) -> FxHashSet<Constraint> {
         let bx = 3 * (self.row / 3) + (self.col / 3);
-        dlx::hashset! {
-            Constraint::RowCol(self.row, self.col),
-            Constraint::RowNum(self.row, self.num),
-            Constraint::ColNum(self.col, self.num),
-            Constraint::BoxNum(bx, self.num),
-        }
+        HashSet::from_iter(
+            [
+                Constraint::RowCol(self.row, self.col),
+                Constraint::RowNum(self.row, self.num),
+                Constraint::ColNum(self.col, self.num),
+                Constraint::BoxNum(bx, self.num),
+            ]
+            .into_iter(),
+        )
     }
 }
 
@@ -59,16 +60,14 @@ fn parse(str: &str) -> Option<impl Iterator<Item = (Cell, FxHashSet<Constraint>)
     for (i, ch) in str.chars().enumerate() {
         let row = i / 9;
         let col = i % 9;
-        if ch == '.' {
-            (1..=9).for_each(|num| cells.push(Cell { row, col, num }));
-        } else if let Some(num @ 1..=9) = ch.to_digit(10) {
-            cells.push(Cell {
+        match ch {
+            '.' => (1..=9).for_each(|num| cells.push(Cell { row, col, num })),
+            num @ '1'..='9' => cells.push(Cell {
                 row,
                 col,
-                num: num as usize,
-            });
-        } else {
-            return None;
+                num: num.to_digit(10).unwrap().try_into().unwrap(),
+            }),
+            _ => return None,
         }
     }
 
@@ -83,6 +82,6 @@ fn parse(str: &str) -> Option<impl Iterator<Item = (Cell, FxHashSet<Constraint>)
 fn display(board: &[Cell]) -> String {
     board
         .iter()
-        .map(|cell| char::from_digit(u32::try_from(cell.num).unwrap(), 10).unwrap())
+        .map(|cell| char::from_digit(cell.num.try_into().unwrap(), 10).unwrap())
         .collect()
 }

@@ -8,4 +8,5 @@ edition = "2021"
 
 [dependencies]
 typed-arena = "2.0.1"
-rustc-hash = "1.0.1"
+rustc-hash = "1.1.0"
+bit-set = "0.5.3"
