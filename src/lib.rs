@@ -1,10 +1,9 @@
 use bit_set::BitSet;
 use rustc_hash::FxHashMap;
-use std::cell::{RefCell, RefMut};
+use std::cell::RefCell;
 use std::collections::HashSet;
 use std::hash::Hash;
 use std::ops::ControlFlow;
-use std::ops::DerefMut;
 use typed_arena::Arena;
 
 pub fn solve<L, T, S>(subsets: impl IntoIterator<Item = (L, HashSet<T, S>)>) -> Option<Vec<L>>
@@ -70,8 +69,8 @@ where
                 self.root.hook_left(header);
                 header
             });
-            *header.size_mut() += 1;
-            *node.header_mut() = header;
+            header.inc_size();
+            node.set_header(header);
             header.hook_up(node);
         }
     }
@@ -87,11 +86,9 @@ impl<'a, L> Ecp<'a, L> {
         self.root == self.root.right()
     }
 
-    fn min_size_col(&self) -> Option<(Node<'a>, usize)> {
+    fn min_size_col(&self) -> Option<Node<'a>> {
         let headers = self.root.iter_right().skip(1);
-        headers
-            .map(|header| (header, header.size()))
-            .min_by(|(_, size0), (_, size1)| size0.cmp(size1))
+        headers.min_by_key(|header| header.size())
     }
 
     fn cover(&self, selected_node: Node<'a>) {
@@ -126,11 +123,7 @@ impl<'a, L> Ecp<'a, L> {
                 return ControlFlow::Break(());
             }
 
-            let (header, col_size) = ecp.min_size_col().unwrap();
-
-            if col_size == 0 {
-                return ControlFlow::Continue(());
-            }
+            let header = ecp.min_size_col().unwrap();
 
             for node in header.iter_down().skip(1) {
                 let ix = node.ix();
@@ -208,82 +201,92 @@ impl<'a> Node<'a> {
     }
 }
 
-macro_rules! define_node_getters {
-    (get: $acc_name:ident, get_mut: $mut_acc_name:ident) => {
+macro_rules! define_node_get_set {
+    (get: $getter:ident, set: $setter:ident) => {
         impl<'a> Node<'a> {
-            fn $acc_name(&self) -> Node<'a> {
-                self.0.borrow().$acc_name.unwrap()
+            #[inline]
+            fn $getter(&self) -> Node<'a> {
+                self.0.borrow().$getter.unwrap()
             }
 
-            fn $mut_acc_name(&self) -> impl DerefMut<Target = Node<'a>> {
-                RefMut::map(self.0.borrow_mut(), |node| node.$acc_name.as_mut().unwrap())
+            #[inline]
+            fn $setter(&self, node: Node<'a>) {
+                self.0.borrow_mut().$getter = Some(node);
             }
         }
     };
 }
 
-define_node_getters! { get: up, get_mut: up_mut }
-define_node_getters! { get: down, get_mut: down_mut }
-define_node_getters! { get: left, get_mut: left_mut }
-define_node_getters! { get: right, get_mut: right_mut }
-define_node_getters! { get: header, get_mut: header_mut }
+define_node_get_set! { get: up, set: set_up }
+define_node_get_set! { get: down, set: set_down }
+define_node_get_set! { get: left, set: set_left }
+define_node_get_set! { get: right, set: set_right }
+define_node_get_set! { get: header, set: set_header }
 
 impl<'a> Node<'a> {
+    #[inline]
     fn size(&self) -> usize {
         self.0.borrow().size_or_ix
     }
 
-    fn size_mut(&self) -> impl DerefMut<Target = usize> + 'a {
-        RefMut::map(self.0.borrow_mut(), |node| &mut node.size_or_ix)
+    #[inline]
+    fn inc_size(&self) {
+        self.0.borrow_mut().size_or_ix += 1;
     }
 
+    #[inline]
+    fn dec_size(&self) {
+        self.0.borrow_mut().size_or_ix -= 1;
+    }
+
+    #[inline]
     fn ix(&self) -> usize {
         self.0.borrow().size_or_ix
     }
 
     fn hook_up(&self, node: Node<'a>) {
-        debug_assert!(self.header() == node.header());
+        debug_assert!(self.0.borrow().header.unwrap() == node.0.borrow().header.unwrap());
 
-        *node.down_mut() = *self;
-        *node.up_mut() = self.up();
-        *self.up().down_mut() = node;
-        *self.up_mut() = node;
+        node.set_down(*self);
+        node.set_up(self.up());
+        self.up().set_down(node);
+        self.set_up(node);
     }
 
     fn hook_left(&self, node: Node<'a>) {
-        *node.right_mut() = *self;
-        *node.left_mut() = self.left();
-        *self.left().right_mut() = node;
-        *self.left_mut() = node;
+        node.set_right(*self);
+        node.set_left(self.left());
+        self.left().set_right(node);
+        self.set_left(node);
     }
 
     fn hook_right(&self, node: Node<'a>) {
-        *node.left_mut() = *self;
-        *node.right_mut() = self.right();
-        *self.right().left_mut() = node;
-        *self.right_mut() = node;
+        node.set_left(*self);
+        node.set_right(self.right());
+        self.right().set_left(node);
+        self.set_right(node);
     }
 
     fn unlink_ud(&self) {
-        *self.up().down_mut() = self.down();
-        *self.down().up_mut() = self.up();
-        *self.header().size_mut() -= 1;
+        self.up().set_down(self.down());
+        self.down().set_up(self.up());
+        self.header().dec_size();
     }
 
     fn unlink_lr(&self) {
-        *self.left().right_mut() = self.right();
-        *self.right().left_mut() = self.left();
+        self.left().set_right(self.right());
+        self.right().set_left(self.left());
     }
 
     fn relink_ud(&self) {
-        *self.up().down_mut() = *self;
-        *self.down().up_mut() = *self;
-        *self.header().size_mut() += 1;
+        self.up().set_down(*self);
+        self.down().set_up(*self);
+        self.header().inc_size();
     }
 
     fn relink_lr(&self) {
-        *self.left().right_mut() = *self;
-        *self.right().left_mut() = *self;
+        self.left().set_right(*self);
+        self.right().set_left(*self);
     }
 }
 
