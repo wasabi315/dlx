@@ -37,9 +37,10 @@ impl<'a, L, T> EcpBuilder<'a, L, T> {
         }
     }
 
+    #[inline]
     fn build(self) -> Ecp<'a, L> {
         Ecp {
-            root: self.root,
+            dlx: Dlx::new(self.root),
             labels: self.labels,
         }
     }
@@ -52,18 +53,16 @@ where
     fn add_subset<S>(&mut self, label: L, subset: HashSet<T, S>) {
         self.labels.push(label);
         let row_ix = self.labels.len() - 1;
+        let mut row_header: Option<Node> = None;
 
-        let mut adj_node: Option<Node> = None;
         for elem in subset {
             let node = Node::new(self.arena, row_ix);
-
-            // Link nodes in a same row
-            if let Some(adj_node) = adj_node {
-                adj_node.hook_right(node);
+            if let Some(row_header) = row_header {
+                row_header.hook_left(node);
+            } else {
+                row_header = Some(node);
             }
-            adj_node = Some(node);
 
-            // Link node in a same column
             let header = *self.headers.entry(elem).or_insert_with(|| {
                 let header = Node::new_header(self.arena);
                 self.root.hook_left(header);
@@ -77,15 +76,38 @@ where
 }
 
 struct Ecp<'a, L> {
-    root: Node<'a>,
+    dlx: Dlx<'a>,
     labels: Vec<L>,
 }
 
 impl<'a, L> Ecp<'a, L> {
+    fn solve(mut self) -> Option<Vec<L>> {
+        let label_indices = self.dlx.solve()?;
+        let mut i = 0;
+        self.labels.retain(|_| {
+            i += 1;
+            label_indices.contains(i - 1)
+        });
+        Some(self.labels)
+    }
+}
+
+struct Dlx<'a> {
+    root: Node<'a>,
+}
+
+impl<'a> Dlx<'a> {
+    #[inline]
+    fn new(root: Node<'a>) -> Dlx<'a> {
+        Dlx { root }
+    }
+
+    #[inline]
     fn is_solved(&self) -> bool {
         self.root == self.root.right()
     }
 
+    #[inline]
     fn min_size_col(&self) -> Option<Node<'a>> {
         let headers = self.root.iter_right().skip(1);
         headers.min_by_key(|header| header.size())
@@ -117,37 +139,32 @@ impl<'a, L> Ecp<'a, L> {
         }
     }
 
-    fn solve(mut self) -> Option<Vec<L>> {
-        fn solve_sub<L>(ecp: &Ecp<L>, label_indices: &mut BitSet) -> ControlFlow<()> {
-            if ecp.is_solved() {
+    fn solve(self) -> Option<BitSet> {
+        fn solve_sub(dlx: &Dlx, label_indices: &mut BitSet) -> ControlFlow<()> {
+            if dlx.is_solved() {
                 return ControlFlow::Break(());
             }
 
-            let header = ecp.min_size_col().unwrap();
+            let header = dlx.min_size_col().unwrap();
 
             for node in header.iter_down().skip(1) {
                 let ix = node.ix();
                 label_indices.insert(ix);
-                ecp.cover(node);
+                dlx.cover(node);
 
-                solve_sub(ecp, label_indices)?;
+                solve_sub(dlx, label_indices)?;
 
-                ecp.uncover(node);
+                dlx.uncover(node);
                 label_indices.remove(ix);
             }
 
             ControlFlow::Continue(())
         }
 
-        let mut label_indices = BitSet::with_capacity(self.labels.len());
-        solve_sub(&self, &mut label_indices).is_break().then(|| {
-            let mut i = 0;
-            self.labels.retain(|_| {
-                i += 1;
-                label_indices.contains(i - 1)
-            });
-            self.labels
-        })
+        let mut label_indices = BitSet::new();
+        solve_sub(&self, &mut label_indices)
+            .is_break()
+            .then(move || label_indices)
     }
 }
 
@@ -175,10 +192,12 @@ struct NodeData<'a> {
 }
 
 impl<'a> Node<'a> {
+    #[inline]
     fn new_header(arena: &'a NodeArena<'a>) -> Self {
         Node::alloc(arena, 0)
     }
 
+    #[inline]
     fn new(arena: &'a NodeArena<'a>, row_ix: usize) -> Self {
         Node::alloc(arena, row_ix)
     }
@@ -245,7 +264,7 @@ impl<'a> Node<'a> {
     }
 
     fn hook_up(&self, node: Node<'a>) {
-        debug_assert!(self.0.borrow().header.unwrap() == node.0.borrow().header.unwrap());
+        debug_assert!(self.header() == node.header());
 
         node.set_down(*self);
         node.set_up(self.up());
@@ -258,13 +277,6 @@ impl<'a> Node<'a> {
         node.set_left(self.left());
         self.left().set_right(node);
         self.set_left(node);
-    }
-
-    fn hook_right(&self, node: Node<'a>) {
-        node.set_left(*self);
-        node.set_right(self.right());
-        self.right().set_left(node);
-        self.set_right(node);
     }
 
     fn unlink_ud(&self) {
@@ -301,15 +313,15 @@ macro_rules! define_node_iterator {
             type Item = Node<'a>;
 
             fn next(&mut self) -> Option<Self::Item> {
-                self.next.map(|node| {
-                    let next = node.$next();
-                    self.next = (next != self.start).then(|| next);
-                    node
-                })
+                let node = self.next?;
+                let next = node.$next();
+                self.next = (next != self.start).then(|| next);
+                Some(node)
             }
         }
 
         impl<'a> Node<'a> {
+            #[inline]
             fn $iter_method_name(&self) -> $iter_struct_name<'a> {
                 $iter_struct_name {
                     start: *self,

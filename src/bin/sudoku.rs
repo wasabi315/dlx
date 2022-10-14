@@ -57,7 +57,7 @@ fn parse(str: &str) -> Option<impl Iterator<Item = (Cell, FxHashSet<Constraint>)
     }
 
     let mut cells = Vec::new();
-    for (i, ch) in str.chars().enumerate() {
+    for (i, ch) in str.char_indices() {
         let row = i / 9;
         let col = i % 9;
         match ch {
