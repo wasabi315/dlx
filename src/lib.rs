@@ -1,4 +1,5 @@
 use bit_set::BitSet;
+use paste::paste;
 use rustc_hash::FxHashMap;
 use std::cell::RefCell;
 use std::collections::HashSet;
@@ -58,19 +59,19 @@ where
         for elem in subset {
             let node = Node::new(self.arena, row_ix);
             if let Some(row_header) = row_header {
-                row_header.hook_left(node);
+                row_header.insert_left(node);
             } else {
                 row_header = Some(node);
             }
 
             let header = *self.headers.entry(elem).or_insert_with(|| {
                 let header = Node::new_header(self.arena);
-                self.root.hook_left(header);
+                self.root.insert_left(header);
                 header
             });
             header.inc_size();
             node.set_header(header);
-            header.hook_up(node);
+            header.insert_up(node);
         }
     }
 }
@@ -211,36 +212,39 @@ impl<'a> Node<'a> {
             header: None,
             size_or_ix,
         })));
-        node.0.borrow_mut().up = Some(node);
-        node.0.borrow_mut().down = Some(node);
-        node.0.borrow_mut().left = Some(node);
-        node.0.borrow_mut().right = Some(node);
-        node.0.borrow_mut().header = Some(node);
+        let mut node_ref_mut = node.0.borrow_mut();
+        node_ref_mut.up = Some(node);
+        node_ref_mut.down = Some(node);
+        node_ref_mut.left = Some(node);
+        node_ref_mut.right = Some(node);
+        node_ref_mut.header = Some(node);
         node
     }
 }
 
 macro_rules! define_node_get_set {
-    (get: $getter:ident, set: $setter:ident) => {
-        impl<'a> Node<'a> {
-            #[inline]
-            fn $getter(&self) -> Node<'a> {
-                self.0.borrow().$getter.unwrap()
-            }
+    ($field:ident) => {
+        paste! {
+            impl<'a> Node<'a> {
+                #[inline]
+                fn $field(&self) -> Node<'a> {
+                    self.0.borrow().$field.unwrap()
+                }
 
-            #[inline]
-            fn $setter(&self, node: Node<'a>) {
-                self.0.borrow_mut().$getter = Some(node);
+                #[inline]
+                fn [<set_ $field>](&self, node: Node<'a>) {
+                    self.0.borrow_mut().$field = Some(node);
+                }
             }
         }
     };
 }
 
-define_node_get_set! { get: up, set: set_up }
-define_node_get_set! { get: down, set: set_down }
-define_node_get_set! { get: left, set: set_left }
-define_node_get_set! { get: right, set: set_right }
-define_node_get_set! { get: header, set: set_header }
+define_node_get_set! { up }
+define_node_get_set! { down }
+define_node_get_set! { left }
+define_node_get_set! { right }
+define_node_get_set! { header }
 
 impl<'a> Node<'a> {
     #[inline]
@@ -263,16 +267,14 @@ impl<'a> Node<'a> {
         self.0.borrow().size_or_ix
     }
 
-    fn hook_up(&self, node: Node<'a>) {
-        debug_assert!(self.header() == node.header());
-
+    fn insert_up(&self, node: Node<'a>) {
         node.set_down(*self);
         node.set_up(self.up());
         self.up().set_down(node);
         self.set_up(node);
     }
 
-    fn hook_left(&self, node: Node<'a>) {
+    fn insert_left(&self, node: Node<'a>) {
         node.set_right(*self);
         node.set_left(self.left());
         self.left().set_right(node);
@@ -303,39 +305,41 @@ impl<'a> Node<'a> {
 }
 
 macro_rules! define_node_iterator {
-    ($iter_method_name:ident: $iter_struct_name:ident { $next:ident }) => {
-        struct $iter_struct_name<'a> {
-            start: Node<'a>,
-            next: Option<Node<'a>>,
-        }
-
-        impl<'a> Iterator for $iter_struct_name<'a> {
-            type Item = Node<'a>;
-
-            fn next(&mut self) -> Option<Self::Item> {
-                let node = self.next?;
-                let next = node.$next();
-                self.next = (next != self.start).then(|| next);
-                Some(node)
+    ($dir:ident) => {
+        paste! {
+            struct [<Iter $dir:camel>]<'a> {
+                start: Node<'a>,
+                next: Option<Node<'a>>,
             }
-        }
 
-        impl<'a> Node<'a> {
-            #[inline]
-            fn $iter_method_name(&self) -> $iter_struct_name<'a> {
-                $iter_struct_name {
-                    start: *self,
-                    next: Some(*self),
+            impl<'a> Iterator for [<Iter $dir:camel>]<'a> {
+                type Item = Node<'a>;
+
+                fn next(&mut self) -> Option<Self::Item> {
+                    let node = self.next?;
+                    let next = node.$dir();
+                    self.next = (next != self.start).then(|| next);
+                    Some(node)
+                }
+            }
+
+            impl<'a> Node<'a> {
+                #[inline]
+                fn [<iter_ $dir>](&self) -> [<Iter $dir:camel>]<'a> {
+                    [<Iter $dir:camel>] {
+                        start: *self,
+                        next: Some(*self),
+                    }
                 }
             }
         }
     };
 }
 
-define_node_iterator! { iter_up: IterUp { up } }
-define_node_iterator! { iter_down: IterDown { down } }
-define_node_iterator! { iter_left: IterLeft { left } }
-define_node_iterator! { iter_right: IterRight { right } }
+define_node_iterator! { up }
+define_node_iterator! { down }
+define_node_iterator! { left }
+define_node_iterator! { right }
 
 #[cfg(test)]
 mod test {

@@ -8,7 +8,7 @@ fn main() {
 
     for line in lines {
         if let Some(solution) = solve(&line.unwrap()) {
-            writeln!(out, "{}", solution).unwrap();
+            writeln!(out, "{solution}",).unwrap();
         } else {
             writeln!(out, "no solution").unwrap();
         }
@@ -65,7 +65,7 @@ fn parse(str: &str) -> Option<impl Iterator<Item = (Cell, FxHashSet<Constraint>)
             num @ '1'..='9' => cells.push(Cell {
                 row,
                 col,
-                num: num.to_digit(10).unwrap().try_into().unwrap(),
+                num: num.to_digit(10).unwrap() as _,
             }),
             _ => return None,
         }
@@ -82,6 +82,6 @@ fn parse(str: &str) -> Option<impl Iterator<Item = (Cell, FxHashSet<Constraint>)
 fn display(board: &[Cell]) -> String {
     board
         .iter()
-        .map(|cell| char::from_digit(cell.num.try_into().unwrap(), 10).unwrap())
+        .map(|cell| char::from_digit(cell.num as _, 10).unwrap())
         .collect()
 }
