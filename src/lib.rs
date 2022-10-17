@@ -187,10 +187,12 @@ impl Dlx {
 
     fn cover(&self, selected_node: Node) {
         for node in selected_node.iter_right(&self.arena) {
-            let mut arena = self.arena.borrow_mut();
-            let header = arena[node].header;
-            header.unlink_lr(&mut arena);
-            drop(arena);
+            let header;
+            {
+                let mut arena = self.arena.borrow_mut();
+                header = arena[node].header;
+                header.unlink_lr(&mut arena);
+            }
 
             for col_node in node
                 .iter_down(&self.arena)
@@ -207,10 +209,12 @@ impl Dlx {
     fn uncover(&self, selected_node: Node) {
         let left = self.arena.borrow()[selected_node].left;
         for node in left.iter_left(&self.arena) {
-            let mut arena = self.arena.borrow_mut();
-            let header = arena[node].header;
-            header.relink_lr(&mut arena);
-            drop(arena);
+            let header;
+            {
+                let mut arena = self.arena.borrow_mut();
+                header = arena[node].header;
+                header.relink_lr(&mut arena);
+            }
 
             for col_node in node
                 .iter_up(&self.arena)
