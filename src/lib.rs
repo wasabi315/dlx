@@ -11,7 +11,7 @@ pub fn solve<L, T, S>(subsets: impl IntoIterator<Item = (L, HashSet<T, S>)>) -> 
 where
     T: Hash + Eq,
 {
-    let arena = Arena::new();
+    let arena = NodeArena::new();
     let mut builder = EcpBuilder::new(&arena);
 
     for (label, subset) in subsets {
@@ -33,7 +33,7 @@ impl<'a, L, T> EcpBuilder<'a, L, T> {
         EcpBuilder {
             headers: FxHashMap::default(),
             arena,
-            root: Node::new_header(arena),
+            root: arena.alloc_header(),
             labels: Vec::new(),
         }
     }
@@ -57,7 +57,7 @@ where
         let mut row_header: Option<Node> = None;
 
         for elem in subset {
-            let node = Node::new(self.arena, row_ix);
+            let node = self.arena.alloc(row_ix);
             if let Some(row_header) = row_header {
                 row_header.insert_left(node);
             } else {
@@ -65,7 +65,7 @@ where
             }
 
             let header = *self.headers.entry(elem).or_insert_with(|| {
-                let header = Node::new_header(self.arena);
+                let header = self.arena.alloc_header();
                 self.root.insert_left(header);
                 header
             });
@@ -82,6 +82,7 @@ struct Ecp<'a, L> {
 }
 
 impl<'a, L> Ecp<'a, L> {
+    #[inline]
     fn solve(mut self) -> Option<Vec<L>> {
         let label_indices = self.dlx.solve()?;
         let mut i = 0;
@@ -169,7 +170,50 @@ impl<'a> Dlx<'a> {
     }
 }
 
-type NodeArena<'a> = Arena<RefCell<NodeData<'a>>>;
+struct NodeArena<'a>(Arena<RefCell<NodeData<'a>>>);
+
+impl<'a> NodeArena<'a> {
+    #[inline]
+    fn new() -> Self {
+        NodeArena(Arena::new())
+    }
+
+    fn alloc_header(&'a self) -> Node<'a> {
+        let node = Node(self.0.alloc(RefCell::new(NodeData {
+            up: None,
+            down: None,
+            left: None,
+            right: None,
+            header: None,
+            size_or_ix: 0,
+        })));
+        let mut node_ref_mut = node.0.borrow_mut();
+        node_ref_mut.up = Some(node);
+        node_ref_mut.down = Some(node);
+        node_ref_mut.left = Some(node);
+        node_ref_mut.right = Some(node);
+        node_ref_mut.header = Some(node);
+        node
+    }
+
+    fn alloc(&'a self, row_ix: usize) -> Node<'a> {
+        let node = Node(self.0.alloc(RefCell::new(NodeData {
+            up: None,
+            down: None,
+            left: None,
+            right: None,
+            header: None,
+            size_or_ix: row_ix,
+        })));
+        let mut node_ref_mut = node.0.borrow_mut();
+        node_ref_mut.up = Some(node);
+        node_ref_mut.down = Some(node);
+        node_ref_mut.left = Some(node);
+        node_ref_mut.right = Some(node);
+        node_ref_mut.header = Some(node);
+        node
+    }
+}
 
 #[derive(Clone, Copy)]
 struct Node<'a>(&'a RefCell<NodeData<'a>>);
@@ -190,36 +234,6 @@ struct NodeData<'a> {
     // size: the number of nodes in a column (when a node is a column header)
     // ix: the row index (otherwise)
     size_or_ix: usize,
-}
-
-impl<'a> Node<'a> {
-    #[inline]
-    fn new_header(arena: &'a NodeArena<'a>) -> Self {
-        Node::alloc(arena, 0)
-    }
-
-    #[inline]
-    fn new(arena: &'a NodeArena<'a>, row_ix: usize) -> Self {
-        Node::alloc(arena, row_ix)
-    }
-
-    fn alloc(arena: &'a NodeArena<'a>, size_or_ix: usize) -> Self {
-        let node = Node(arena.alloc(RefCell::new(NodeData {
-            up: None,
-            down: None,
-            left: None,
-            right: None,
-            header: None,
-            size_or_ix,
-        })));
-        let mut node_ref_mut = node.0.borrow_mut();
-        node_ref_mut.up = Some(node);
-        node_ref_mut.down = Some(node);
-        node_ref_mut.left = Some(node);
-        node_ref_mut.right = Some(node);
-        node_ref_mut.header = Some(node);
-        node
-    }
 }
 
 macro_rules! define_node_get_set {
