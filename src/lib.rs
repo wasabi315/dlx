@@ -191,7 +191,6 @@ impl<'a> NodeArena<'a> {
         node.set_down(node);
         node.set_left(node);
         node.set_right(node);
-        node.set_header(node);
         node
     }
 
@@ -228,9 +227,9 @@ struct NodeData<'a> {
     down: Cell<Option<Node<'a>>>,
     left: Cell<Option<Node<'a>>>,
     right: Cell<Option<Node<'a>>>,
+    // None if being a column header, otherwise Some(its column header)
     header: Cell<Option<Node<'a>>>,
-    // size: the number of nodes in a column (when a node is a column header)
-    // ix: the row index (otherwise)
+    // the number of nodes in the column if being a column header, otherwise the row index
     size_or_ix: Cell<usize>,
 }
 
@@ -260,24 +259,33 @@ define_node_get_set! { header }
 
 impl<'a> Node<'a> {
     #[inline]
+    fn is_header(&self) -> bool {
+        self.0.header.get().is_none()
+    }
+
+    #[inline]
     fn size(&self) -> usize {
+        debug_assert!(self.is_header());
         self.0.size_or_ix.get()
     }
 
     #[inline]
     fn inc_size(&self) {
+        debug_assert!(self.is_header());
         let size = &self.0.size_or_ix;
         size.set(size.get() + 1);
     }
 
     #[inline]
     fn dec_size(&self) {
+        debug_assert!(self.is_header());
         let size = &self.0.size_or_ix;
         size.set(size.get() - 1);
     }
 
     #[inline]
     fn ix(&self) -> usize {
+        debug_assert!(!self.is_header());
         self.0.size_or_ix.get()
     }
 
