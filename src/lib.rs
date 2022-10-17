@@ -1,7 +1,7 @@
 use bit_set::BitSet;
 use paste::paste;
 use rustc_hash::FxHashMap;
-use std::cell::RefCell;
+use std::cell::Cell;
 use std::collections::HashSet;
 use std::hash::Hash;
 use std::ops::ControlFlow;
@@ -170,7 +170,7 @@ impl<'a> Dlx<'a> {
     }
 }
 
-struct NodeArena<'a>(Arena<RefCell<NodeData<'a>>>);
+struct NodeArena<'a>(Arena<NodeData<'a>>);
 
 impl<'a> NodeArena<'a> {
     #[inline]
@@ -179,44 +179,42 @@ impl<'a> NodeArena<'a> {
     }
 
     fn alloc_header(&'a self) -> Node<'a> {
-        let node = Node(self.0.alloc(RefCell::new(NodeData {
-            up: None,
-            down: None,
-            left: None,
-            right: None,
-            header: None,
-            size_or_ix: 0,
-        })));
-        let mut node_ref_mut = node.0.borrow_mut();
-        node_ref_mut.up = Some(node);
-        node_ref_mut.down = Some(node);
-        node_ref_mut.left = Some(node);
-        node_ref_mut.right = Some(node);
-        node_ref_mut.header = Some(node);
+        let node = Node(self.0.alloc(NodeData {
+            up: Cell::new(None),
+            down: Cell::new(None),
+            left: Cell::new(None),
+            right: Cell::new(None),
+            header: Cell::new(None),
+            size_or_ix: Cell::new(0),
+        }));
+        node.set_up(node);
+        node.set_down(node);
+        node.set_left(node);
+        node.set_right(node);
+        node.set_header(node);
         node
     }
 
     fn alloc(&'a self, row_ix: usize) -> Node<'a> {
-        let node = Node(self.0.alloc(RefCell::new(NodeData {
-            up: None,
-            down: None,
-            left: None,
-            right: None,
-            header: None,
-            size_or_ix: row_ix,
-        })));
-        let mut node_ref_mut = node.0.borrow_mut();
-        node_ref_mut.up = Some(node);
-        node_ref_mut.down = Some(node);
-        node_ref_mut.left = Some(node);
-        node_ref_mut.right = Some(node);
-        node_ref_mut.header = Some(node);
+        let node = Node(self.0.alloc(NodeData {
+            up: Cell::new(None),
+            down: Cell::new(None),
+            left: Cell::new(None),
+            right: Cell::new(None),
+            header: Cell::new(None),
+            size_or_ix: Cell::new(row_ix),
+        }));
+        node.set_up(node);
+        node.set_down(node);
+        node.set_left(node);
+        node.set_right(node);
+        node.set_header(node);
         node
     }
 }
 
 #[derive(Clone, Copy)]
-struct Node<'a>(&'a RefCell<NodeData<'a>>);
+struct Node<'a>(&'a NodeData<'a>);
 
 impl<'a> PartialEq for Node<'a> {
     fn eq(&self, other: &Node<'a>) -> bool {
@@ -224,16 +222,16 @@ impl<'a> PartialEq for Node<'a> {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct NodeData<'a> {
-    up: Option<Node<'a>>,
-    down: Option<Node<'a>>,
-    left: Option<Node<'a>>,
-    right: Option<Node<'a>>,
-    header: Option<Node<'a>>,
+    up: Cell<Option<Node<'a>>>,
+    down: Cell<Option<Node<'a>>>,
+    left: Cell<Option<Node<'a>>>,
+    right: Cell<Option<Node<'a>>>,
+    header: Cell<Option<Node<'a>>>,
     // size: the number of nodes in a column (when a node is a column header)
     // ix: the row index (otherwise)
-    size_or_ix: usize,
+    size_or_ix: Cell<usize>,
 }
 
 macro_rules! define_node_get_set {
@@ -242,12 +240,12 @@ macro_rules! define_node_get_set {
             impl<'a> Node<'a> {
                 #[inline]
                 fn $field(&self) -> Node<'a> {
-                    self.0.borrow().$field.unwrap()
+                    self.0.$field.get().unwrap()
                 }
 
                 #[inline]
                 fn [<set_ $field>](&self, node: Node<'a>) {
-                    self.0.borrow_mut().$field = Some(node);
+                    self.0.$field.set(Some(node));
                 }
             }
         }
@@ -263,22 +261,24 @@ define_node_get_set! { header }
 impl<'a> Node<'a> {
     #[inline]
     fn size(&self) -> usize {
-        self.0.borrow().size_or_ix
+        self.0.size_or_ix.get()
     }
 
     #[inline]
     fn inc_size(&self) {
-        self.0.borrow_mut().size_or_ix += 1;
+        let size = &self.0.size_or_ix;
+        size.set(size.get() + 1);
     }
 
     #[inline]
     fn dec_size(&self) {
-        self.0.borrow_mut().size_or_ix -= 1;
+        let size = &self.0.size_or_ix;
+        size.set(size.get() - 1);
     }
 
     #[inline]
     fn ix(&self) -> usize {
-        self.0.borrow().size_or_ix
+        self.0.size_or_ix.get()
     }
 
     fn insert_up(&self, node: Node<'a>) {
