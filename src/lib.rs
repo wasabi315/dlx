@@ -52,6 +52,22 @@ where
     T: Hash + Eq,
 {
     fn add_subset<S>(&mut self, label: L, subset: HashSet<T, S>) {
+        fn insert_col<'a>(col_header: Node<'a>, node: Node<'a>) {
+            node.set_header(col_header);
+            node.set_down(col_header);
+            node.set_up(col_header.up());
+            col_header.up().set_down(node);
+            col_header.set_up(node);
+            col_header.inc_size();
+        }
+
+        fn insert_row<'a>(row_header: Node<'a>, node: Node<'a>) {
+            node.set_right(row_header);
+            node.set_left(row_header.left());
+            row_header.left().set_right(node);
+            row_header.set_left(node);
+        }
+
         self.labels.push(label);
         let row_ix = self.labels.len() - 1;
         let mut row_header: Option<Node> = None;
@@ -59,19 +75,17 @@ where
         for elem in subset {
             let node = self.arena.alloc(row_ix);
             if let Some(row_header) = row_header {
-                row_header.insert_left(node);
+                insert_row(row_header, node);
             } else {
                 row_header = Some(node);
             }
 
-            let header = *self.headers.entry(elem).or_insert_with(|| {
+            let col_header = *self.headers.entry(elem).or_insert_with(|| {
                 let header = self.arena.alloc_header();
-                self.root.insert_left(header);
+                insert_row(self.root, header);
                 header
             });
-            header.inc_size();
-            node.set_header(header);
-            header.insert_up(node);
+            insert_col(col_header, node);
         }
     }
 }
@@ -207,7 +221,7 @@ impl<'a> NodeArena<'a> {
         node.set_down(node);
         node.set_left(node);
         node.set_right(node);
-        node.set_header(node);
+        node.0.header.set(Some(node));
         node
     }
 }
@@ -255,12 +269,23 @@ define_node_get_set! { up }
 define_node_get_set! { down }
 define_node_get_set! { left }
 define_node_get_set! { right }
-define_node_get_set! { header }
 
 impl<'a> Node<'a> {
     #[inline]
     fn is_header(&self) -> bool {
         self.0.header.get().is_none()
+    }
+
+    #[inline]
+    fn header(&self) -> Node<'a> {
+        debug_assert!(!self.is_header());
+        self.0.header.get().unwrap()
+    }
+
+    #[inline]
+    fn set_header(&self, header: Node<'a>) {
+        debug_assert!(!self.is_header() && header.is_header());
+        self.0.header.set(Some(header));
     }
 
     #[inline]
@@ -287,20 +312,6 @@ impl<'a> Node<'a> {
     fn ix(&self) -> usize {
         debug_assert!(!self.is_header());
         self.0.size_or_ix.get()
-    }
-
-    fn insert_up(&self, node: Node<'a>) {
-        node.set_down(*self);
-        node.set_up(self.up());
-        self.up().set_down(node);
-        self.set_up(node);
-    }
-
-    fn insert_left(&self, node: Node<'a>) {
-        node.set_right(*self);
-        node.set_left(self.left());
-        self.left().set_right(node);
-        self.set_left(node);
     }
 
     fn unlink_ud(&self) {
