@@ -2,11 +2,11 @@ mod node;
 mod problem;
 mod solver;
 
-use std::collections::HashSet;
-use std::hash::Hash;
 use node::NodeArena;
 use problem::Problem;
 use solver::Solver;
+use std::collections::HashSet;
+use std::hash::Hash;
 
 pub fn solve<L, T, S>(subsets: impl IntoIterator<Item = (L, HashSet<T, S>)>) -> Option<Vec<L>>
 where
@@ -21,7 +21,6 @@ where
 
     Solver::new(problem).solve()
 }
-
 
 #[cfg(test)]
 mod test {

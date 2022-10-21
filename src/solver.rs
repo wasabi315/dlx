@@ -16,21 +16,43 @@ impl<'a, L> Solver<'a, L> {
         }
     }
 
-
     pub(crate) fn solve(mut self) -> Option<Vec<L>> {
-        let label_indices = self.dlx.solve()?;
+        let sol_indices = SolutionsIndices::new(self.dlx).next()?;
         let mut i = 0;
         self.labels.retain(|_| {
             i += 1;
-            label_indices.contains(i - 1)
+            sol_indices.contains(i - 1)
         });
         Some(self.labels)
     }
 }
 
+pub(crate) struct Solutions<'a, L> {
+    iter: SolutionsIndices<'a>,
+    labels: Vec<L>,
+}
+
+impl<'a, L: Clone> Iterator for Solutions<'a, L> {
+    type Item = Vec<L>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let sol_indices = self.iter.next()?;
+        let solution = self
+            .labels
+            .iter()
+            .enumerate()
+            .filter_map(|(i, label)| sol_indices.contains(i).then(|| label.clone()))
+            .collect();
+        Some(solution)
+    }
+}
+
 impl<'a, L: Clone> Solver<'a, L> {
     pub(crate) fn solutions(self) -> Solutions<'a, L> {
-        Solutions::new(self)
+        Solutions {
+            iter: SolutionsIndices::new(self.dlx),
+            labels: self.labels,
+        }
     }
 }
 
@@ -77,96 +99,50 @@ impl<'a> Dlx<'a> {
             }
         }
     }
-
-    fn solve(self) -> Option<BitSet> {
-        let mut label_indices = BitSet::new();
-        let mut stack: Vec<(Option<Node>, Skip<IterDown>)> = Vec::new();
-
-        if self.is_solved() {
-            return Some(label_indices);
-        }
-        let header = self.min_size_col().unwrap();
-        stack.push((None, header.iter_down().skip(1)));
-
-        loop {
-            let (selected_node, candidate_rows) = stack.last_mut().unwrap();
-
-            if let Some(node) = candidate_rows.next() {
-                label_indices.insert(node.ix());
-                self.cover(node);
-
-                if self.is_solved() {
-                    return Some(label_indices);
-                }
-                let header = self.min_size_col().unwrap();
-                stack.push((Some(node), header.iter_down().skip(1)));
-
-                continue;
-            }
-
-            if let Some(node) = selected_node {
-                self.uncover(*node);
-                label_indices.remove(node.ix());
-                stack.pop();
-
-                continue;
-            }
-
-            return None;
-        }
-    }
 }
 
-pub(crate) struct Solutions<'a, L> {
+struct SolutionsIndices<'a> {
     dlx: Dlx<'a>,
-    running: bool,
+    init: bool,
     indices: BitSet,
     stack: Vec<(Option<Node<'a>>, Skip<IterDown<'a>>)>,
-    labels: Vec<L>,
 }
 
-impl<'a, L: Clone> Solutions<'a, L> {
-    fn new(solver: Solver<'a, L>) -> Self {
-        Solutions {
-            dlx: solver.dlx,
-            running: false,
+impl<'a> SolutionsIndices<'a> {
+    fn new(dlx: Dlx<'a>) -> Self {
+        SolutionsIndices {
+            dlx,
+            init: true,
             indices: BitSet::new(),
             stack: Vec::new(),
-            labels: solver.labels,
         }
     }
 }
 
-impl<'a, L: Clone> Iterator for Solutions<'a, L> {
-    type Item = Vec<L>;
+impl<'a> Iterator for SolutionsIndices<'a> {
+    type Item = BitSet;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if !self.running {
-            self.running = true;
+        if self.init {
+            self.init = false;
 
             if self.dlx.is_solved() {
-                return Some(Vec::new());
+                return Some(self.indices.clone());
             }
             let header = self.dlx.min_size_col().unwrap();
             self.stack.push((None, header.iter_down().skip(1)));
         }
 
-        loop {
-            let (selected_node, candidate_rows) = self.stack.last_mut().unwrap();
-
+        while let Some((selected_node, candidate_rows)) = self.stack.last_mut() {
             if let Some(node) = candidate_rows.next() {
-                self.indices.insert(node.ix());
+                let ix = node.ix();
+                self.indices.insert(ix);
                 self.dlx.cover(node);
 
                 if self.dlx.is_solved() {
-                    let solution = self
-                        .labels
-                        .iter()
-                        .enumerate()
-                        .filter_map(|(i, label)| self.indices.contains(i).then(|| label.clone()))
-                        .collect();
+                    let solution = self.indices.clone();
                     self.dlx.uncover(node);
-                    self.indices.remove(node.ix());
+                    self.indices.remove(ix);
                     return Some(solution);
                 }
                 let header = self.dlx.min_size_col().unwrap();
@@ -175,15 +151,13 @@ impl<'a, L: Clone> Iterator for Solutions<'a, L> {
                 continue;
             }
 
-            if let Some(node) = selected_node {
-                self.dlx.uncover(*node);
+            if let Some(node) = *selected_node {
+                self.dlx.uncover(node);
                 self.indices.remove(node.ix());
-                self.stack.pop();
-
-                continue;
             }
-
-            return None;
+            self.stack.pop();
         }
+
+        None
     }
 }
