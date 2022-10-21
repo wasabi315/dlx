@@ -156,25 +156,25 @@ impl<'a> Node<'a> {
 macro_rules! define_node_iterator {
     ($dir:ident) => {
         paste! {
+            pub(crate) struct [<Iter $dir:camel>]<'a> {
+                start: Node<'a>,
+                next: Option<Node<'a>>,
+            }
+
+            impl<'a> Iterator for [<Iter $dir:camel>]<'a> {
+                type Item = Node<'a>;
+
+                fn next(&mut self) -> Option<Self::Item> {
+                    let node = self.next?;
+                    let next = node.$dir();
+                    self.next = (next != self.start).then_some(next);
+                    Some(node)
+                }
+            }
+
             impl<'a> Node<'a> {
-                pub(crate) fn [<iter_ $dir>](&self) -> impl Iterator<Item = Node<'a>> {
-                    struct Iter<'a> {
-                        start: Node<'a>,
-                        next: Option<Node<'a>>,
-                    }
-
-                    impl<'a> Iterator for Iter<'a> {
-                        type Item = Node<'a>;
-
-                        fn next(&mut self) -> Option<Self::Item> {
-                            let node = self.next?;
-                            let next = node.$dir();
-                            self.next = (next != self.start).then_some(next);
-                            Some(node)
-                        }
-                    }
-
-                    Iter {
+                pub(crate) fn [<iter_ $dir>](&self) -> [<Iter $dir:camel>]<'a> {
+                    [<Iter $dir:camel>] {
                         start: *self,
                         next: Some(*self),
                     }
