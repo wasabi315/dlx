@@ -60,28 +60,28 @@ impl<'a, L: Clone> Solver<'a, L> {
 
 struct AlgorithmX<'a> {
     dlx: Dlx<'a>,
-    init: bool,
     selected_rows: BitSet,
     context: Vec<Context<'a>>,
 }
 
 struct Context<'a> {
     selected_row: Option<Node<'a>>,
-    candidate_rows: Skip<IterDown<'a>>,
+    candidate_rows: Option<Skip<IterDown<'a>>>,
 }
 
 impl<'a> AlgorithmX<'a> {
     fn new(dlx: Dlx<'a>) -> Self {
+        let header = dlx.min_size_col();
+        let context = vec![Context {
+            selected_row: None,
+            candidate_rows: header.map(|header| header.iter_down().skip(1)),
+        }];
+
         AlgorithmX {
             dlx,
-            init: true,
             selected_rows: BitSet::new(),
-            context: Vec::new(),
+            context,
         }
-    }
-
-    fn is_solved(&self) -> bool {
-        self.dlx.is_empty()
     }
 
     fn select(&mut self, row: Node<'a>) {
@@ -99,38 +99,23 @@ impl<'a> Iterator for AlgorithmX<'a> {
     type Item = BitSet;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.init {
-            self.init = false;
-
-            if self.is_solved() {
-                return Some(BitSet::new());
-            }
-            let header = self.dlx.min_size_col().unwrap();
-            self.context.push(Context {
-                selected_row: None,
-                candidate_rows: header.iter_down().skip(1),
-            });
-        }
-
         while let Some(ctx) = self.context.last_mut() {
-            if let Some(row) = ctx.candidate_rows.next() {
+            if self.dlx.is_empty() {
+                let solution = self.selected_rows.clone();
+                if let Some(row) = ctx.selected_row { self.unselect(row) };
+                self.context.pop();
+                return Some(solution);
+            }
+
+            if let Some(row) = ctx.candidate_rows.as_mut().unwrap().next() {
                 self.select(row);
-
-                if self.is_solved() {
-                    let solution = self.selected_rows.clone();
-                    self.unselect(row);
-                    return Some(solution);
-                }
-
-                let header = self.dlx.min_size_col().unwrap();
+                let header = self.dlx.min_size_col();
                 self.context.push(Context {
                     selected_row: Some(row),
-                    candidate_rows: header.iter_down().skip(1),
+                    candidate_rows: header.map(|header| header.iter_down().skip(1)),
                 });
             } else {
-                if let Some(row) = ctx.selected_row {
-                    self.unselect(row);
-                }
+                if let Some(row) = ctx.selected_row { self.unselect(row) };
                 self.context.pop();
             }
         }
