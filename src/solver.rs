@@ -79,6 +79,20 @@ impl<'a> AlgorithmX<'a> {
             context: Vec::new(),
         }
     }
+
+    fn is_solved(&self) -> bool {
+        self.dlx.is_empty()
+    }
+
+    fn select(&mut self, row: Node<'a>) {
+        self.selected_rows.insert(row.ix());
+        self.dlx.cover(row);
+    }
+
+    fn unselect(&mut self, row: Node<'a>) {
+        self.dlx.uncover(row);
+        self.selected_rows.remove(row.ix());
+    }
 }
 
 impl<'a> Iterator for AlgorithmX<'a> {
@@ -88,7 +102,7 @@ impl<'a> Iterator for AlgorithmX<'a> {
         if self.init {
             self.init = false;
 
-            if self.dlx.is_empty() {
+            if self.is_solved() {
                 return Some(BitSet::new());
             }
             let header = self.dlx.min_size_col().unwrap();
@@ -100,13 +114,11 @@ impl<'a> Iterator for AlgorithmX<'a> {
 
         while let Some(ctx) = self.context.last_mut() {
             if let Some(row) = ctx.candidate_rows.next() {
-                self.selected_rows.insert(row.ix());
-                self.dlx.cover(row);
+                self.select(row);
 
-                if self.dlx.is_empty() {
+                if self.is_solved() {
                     let solution = self.selected_rows.clone();
-                    self.dlx.uncover(row);
-                    self.selected_rows.remove(row.ix());
+                    self.unselect(row);
                     return Some(solution);
                 }
 
@@ -117,8 +129,7 @@ impl<'a> Iterator for AlgorithmX<'a> {
                 });
             } else {
                 if let Some(row) = ctx.selected_row {
-                    self.dlx.uncover(row);
-                    self.selected_rows.remove(row.ix());
+                    self.unselect(row);
                 }
                 self.context.pop();
             }
