@@ -61,8 +61,13 @@ impl<'a, L: Clone> Solver<'a, L> {
 struct AlgorithmX<'a> {
     dlx: Dlx<'a>,
     init: bool,
-    indices: BitSet,
-    stack: Vec<(Option<Node<'a>>, Skip<IterDown<'a>>)>,
+    selected_rows: BitSet,
+    context: Vec<Context<'a>>,
+}
+
+struct Context<'a> {
+    selected_row: Option<Node<'a>>,
+    candidate_rows: Skip<IterDown<'a>>,
 }
 
 impl<'a> AlgorithmX<'a> {
@@ -70,8 +75,8 @@ impl<'a> AlgorithmX<'a> {
         AlgorithmX {
             dlx,
             init: true,
-            indices: BitSet::new(),
-            stack: Vec::new(),
+            selected_rows: BitSet::new(),
+            context: Vec::new(),
         }
     }
 }
@@ -83,36 +88,40 @@ impl<'a> Iterator for AlgorithmX<'a> {
         if self.init {
             self.init = false;
 
-            if self.dlx.is_solved() {
-                return Some(self.indices.clone());
+            if self.dlx.is_empty() {
+                return Some(BitSet::new());
             }
             let header = self.dlx.min_size_col().unwrap();
-            self.stack.push((None, header.iter_down().skip(1)));
+            self.context.push(Context {
+                selected_row: None,
+                candidate_rows: header.iter_down().skip(1),
+            });
         }
 
-        while let Some((selected_node, candidate_rows)) = self.stack.last_mut() {
-            if let Some(node) = candidate_rows.next() {
-                let ix = node.ix();
-                self.indices.insert(ix);
-                self.dlx.cover(node);
+        while let Some(ctx) = self.context.last_mut() {
+            if let Some(row) = ctx.candidate_rows.next() {
+                self.selected_rows.insert(row.ix());
+                self.dlx.cover(row);
 
-                if self.dlx.is_solved() {
-                    let solution = self.indices.clone();
-                    self.dlx.uncover(node);
-                    self.indices.remove(ix);
+                if self.dlx.is_empty() {
+                    let solution = self.selected_rows.clone();
+                    self.dlx.uncover(row);
+                    self.selected_rows.remove(row.ix());
                     return Some(solution);
                 }
+
                 let header = self.dlx.min_size_col().unwrap();
-                self.stack.push((Some(node), header.iter_down().skip(1)));
-
-                continue;
+                self.context.push(Context {
+                    selected_row: Some(row),
+                    candidate_rows: header.iter_down().skip(1),
+                });
+            } else {
+                if let Some(row) = ctx.selected_row {
+                    self.dlx.uncover(row);
+                    self.selected_rows.remove(row.ix());
+                }
+                self.context.pop();
             }
-
-            if let Some(node) = *selected_node {
-                self.dlx.uncover(node);
-                self.indices.remove(node.ix());
-            }
-            self.stack.pop();
         }
 
         None

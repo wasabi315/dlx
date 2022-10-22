@@ -9,7 +9,7 @@ impl<'a> Dlx<'a> {
         Dlx { root }
     }
 
-    pub(crate) fn is_solved(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.root == self.root.right()
     }
 
