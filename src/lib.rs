@@ -1,12 +1,14 @@
+use std::collections::HashSet;
+use std::hash::Hash;
+
 mod node;
 mod problem;
+mod dlx;
 mod solver;
 
 use node::NodeArena;
 use problem::Problem;
 use solver::Solver;
-use std::collections::HashSet;
-use std::hash::Hash;
 
 pub fn solve<L, T, S>(subsets: impl IntoIterator<Item = (L, HashSet<T, S>)>) -> Option<Vec<L>>
 where

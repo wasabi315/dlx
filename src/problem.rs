@@ -1,7 +1,8 @@
-use super::node::{Node, NodeArena};
 use rustc_hash::FxHashMap;
 use std::collections::HashSet;
 use std::hash::Hash;
+
+use super::node::{Node, NodeArena};
 
 pub(crate) struct Problem<'a, L, T> {
     headers: FxHashMap<T, Node<'a>>,

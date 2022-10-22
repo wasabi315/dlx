@@ -1,7 +1,9 @@
-use super::node::{IterDown, Node};
-use super::Problem;
 use bit_set::BitSet;
 use std::iter::Skip;
+
+use super::dlx::Dlx;
+use super::node::{IterDown, Node};
+use super::Problem;
 
 pub(crate) struct Solver<'a, L> {
     dlx: Dlx<'a>,
@@ -17,7 +19,7 @@ impl<'a, L> Solver<'a, L> {
     }
 
     pub(crate) fn solve(mut self) -> Option<Vec<L>> {
-        let sol_indices = SolutionsIndices::new(self.dlx).next()?;
+        let sol_indices = AlgorithmX::new(self.dlx).next()?;
         let mut i = 0;
         self.labels.retain(|_| {
             i += 1;
@@ -28,7 +30,7 @@ impl<'a, L> Solver<'a, L> {
 }
 
 pub(crate) struct Solutions<'a, L> {
-    iter: SolutionsIndices<'a>,
+    alg: AlgorithmX<'a>,
     labels: Vec<L>,
 }
 
@@ -36,7 +38,7 @@ impl<'a, L: Clone> Iterator for Solutions<'a, L> {
     type Item = Vec<L>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let sol_indices = self.iter.next()?;
+        let sol_indices = self.alg.next()?;
         let solution = self
             .labels
             .iter()
@@ -50,67 +52,22 @@ impl<'a, L: Clone> Iterator for Solutions<'a, L> {
 impl<'a, L: Clone> Solver<'a, L> {
     pub(crate) fn solutions(self) -> Solutions<'a, L> {
         Solutions {
-            iter: SolutionsIndices::new(self.dlx),
+            alg: AlgorithmX::new(self.dlx),
             labels: self.labels,
         }
     }
 }
 
-struct Dlx<'a> {
-    root: Node<'a>,
-}
-
-impl<'a> Dlx<'a> {
-    fn new(root: Node<'a>) -> Self {
-        Dlx { root }
-    }
-
-    fn is_solved(&self) -> bool {
-        self.root == self.root.right()
-    }
-
-    fn min_size_col(&self) -> Option<Node<'a>> {
-        let headers = self.root.iter_right().skip(1);
-        headers.min_by_key(|header| header.size())
-    }
-
-    fn cover(&self, selected_node: Node<'a>) {
-        for node in selected_node.iter_right() {
-            let header = node.header();
-            header.unlink_lr();
-
-            for col_node in node.iter_down().skip(1).filter(|node| node != &header) {
-                for row_node in col_node.iter_right().skip(1) {
-                    row_node.unlink_ud();
-                }
-            }
-        }
-    }
-
-    fn uncover(&self, selected_node: Node<'a>) {
-        for node in selected_node.left().iter_left() {
-            let header = node.header();
-            header.relink_lr();
-
-            for col_node in node.iter_up().skip(1).filter(|node| node != &header) {
-                for row_node in col_node.iter_left().skip(1) {
-                    row_node.relink_ud();
-                }
-            }
-        }
-    }
-}
-
-struct SolutionsIndices<'a> {
+struct AlgorithmX<'a> {
     dlx: Dlx<'a>,
     init: bool,
     indices: BitSet,
     stack: Vec<(Option<Node<'a>>, Skip<IterDown<'a>>)>,
 }
 
-impl<'a> SolutionsIndices<'a> {
+impl<'a> AlgorithmX<'a> {
     fn new(dlx: Dlx<'a>) -> Self {
-        SolutionsIndices {
+        AlgorithmX {
             dlx,
             init: true,
             indices: BitSet::new(),
@@ -119,7 +76,7 @@ impl<'a> SolutionsIndices<'a> {
     }
 }
 
-impl<'a> Iterator for SolutionsIndices<'a> {
+impl<'a> Iterator for AlgorithmX<'a> {
     type Item = BitSet;
 
     fn next(&mut self) -> Option<Self::Item> {
