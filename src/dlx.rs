@@ -1,4 +1,4 @@
-use super::node::Node;
+use crate::node::{IterDown, Node};
 
 pub(crate) struct Dlx<'a> {
     root: Node<'a>,
@@ -9,13 +9,12 @@ impl<'a> Dlx<'a> {
         Dlx { root }
     }
 
-    pub(crate) fn is_empty(&self) -> bool {
-        self.root == self.root.right()
-    }
-
-    pub(crate) fn min_size_col(&self) -> Option<Node<'a>> {
+    pub(crate) fn min_size_col(&self) -> Option<IterDown<'a>> {
         let headers = self.root.iter_right().skip(1);
-        headers.min_by_key(|header| header.size())
+        let header = headers.min_by_key(|header| header.size())?;
+        let mut column = header.iter_down();
+        column.next(); // skip header
+        Some(column)
     }
 
     pub(crate) fn cover(&self, selected_node: Node<'a>) {

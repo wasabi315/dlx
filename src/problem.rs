@@ -2,7 +2,7 @@ use rustc_hash::FxHashMap;
 use std::collections::HashSet;
 use std::hash::Hash;
 
-use super::node::{Node, NodeArena};
+use crate::node::{Node, NodeArena};
 
 pub(crate) struct Problem<'a, L, T> {
     headers: FxHashMap<T, Node<'a>>,
@@ -20,13 +20,11 @@ impl<'a, L, T> Problem<'a, L, T> {
             labels: Vec::new(),
         }
     }
-}
 
-impl<'a, L, T> Problem<'a, L, T>
-where
-    T: Hash + Eq,
-{
-    pub(crate) fn add_subset<S>(&mut self, label: L, subset: HashSet<T, S>) {
+    pub(crate) fn add_subset<S>(&mut self, label: L, subset: HashSet<T, S>)
+    where
+        T: Hash + Eq,
+    {
         self.labels.push(label);
         let row_ix = self.labels.len() - 1;
         let mut row_header: Option<Node> = None;
