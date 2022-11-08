@@ -1,4 +1,5 @@
 use bitvec::vec::BitVec;
+use std::cell::Cell;
 
 use crate::dlx::Dlx;
 use crate::node::{Column, Node};
@@ -63,7 +64,7 @@ where
 struct AlgorithmX<'a> {
     dlx: Dlx<'a>,
     init: bool,
-    select_flags: BitVec,
+    select_flags: BitVec<Cell<usize>>,
     stack: Vec<Frame<'a>>,
 }
 
@@ -94,7 +95,7 @@ impl<'a> AlgorithmX<'a> {
 }
 
 impl<'a> Iterator for AlgorithmX<'a> {
-    type Item = BitVec;
+    type Item = BitVec<Cell<usize>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.init {
@@ -111,7 +112,7 @@ impl<'a> Iterator for AlgorithmX<'a> {
         }
 
         while let Some(frame) = self.stack.last_mut() {
-            let Some(row) = frame.column.next() else {
+            let Some(node) = frame.column.next() else {
                 // backtrack if there's no node to explore in `column`
                 if let Some(node) = frame.breadcrumb {
                     self.unselect(node);
@@ -120,17 +121,17 @@ impl<'a> Iterator for AlgorithmX<'a> {
                 continue
             };
 
-            self.select(row);
+            self.select(node);
 
             if let Some(column) = self.dlx.min_size_col() {
                 self.stack.push(Frame {
-                    breadcrumb: Some(row),
+                    breadcrumb: Some(node),
                     column,
                 });
             } else {
                 // if there's no column to choose, i.e., the DLX is empty, we've found a solution
                 let select_flags = self.select_flags.clone();
-                self.unselect(row);
+                self.unselect(node);
                 return Some(select_flags);
             }
         }
