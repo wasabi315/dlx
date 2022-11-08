@@ -154,14 +154,14 @@ impl<'a> Node<'a> {
 }
 
 macro_rules! define_node_iterator {
-    ($dir:ident) => {
+    ($name:ident, $dir:ident) => {
         paste! {
-            pub(crate) struct [<Iter $dir:camel>]<'a> {
+            pub(crate) struct $name<'a> {
                 start: Node<'a>,
                 next: Option<Node<'a>>,
             }
 
-            impl<'a> Iterator for [<Iter $dir:camel>]<'a> {
+            impl<'a> Iterator for $name<'a> {
                 type Item = Node<'a>;
 
                 fn next(&mut self) -> Option<Self::Item> {
@@ -173,8 +173,8 @@ macro_rules! define_node_iterator {
             }
 
             impl<'a> Node<'a> {
-                pub(crate) fn [<iter_ $dir>](&self) -> [<Iter $dir:camel>]<'a> {
-                    [<Iter $dir:camel>] {
+                pub(crate) fn [<$name:snake>](&self) -> $name<'a> {
+                    $name {
                         start: *self,
                         next: Some(*self),
                     }
@@ -184,7 +184,7 @@ macro_rules! define_node_iterator {
     };
 }
 
-define_node_iterator! { up }
-define_node_iterator! { down }
-define_node_iterator! { left }
-define_node_iterator! { right }
+define_node_iterator! { ColumnRev, up }
+define_node_iterator! { Column, down }
+define_node_iterator! { RowRev, left }
+define_node_iterator! { Row, right }
