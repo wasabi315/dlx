@@ -102,8 +102,7 @@ impl<'a> Iterator for AlgorithmX<'a> {
             self.init = false;
 
             let Some(column) = self.dlx.min_size_col() else {
-                // given DLX is empty thus the only solution is empty
-                return Some(BitVec::new());
+                return Some(self.select_flags.clone());
             };
             self.stack.push(Frame {
                 breadcrumb: None,
