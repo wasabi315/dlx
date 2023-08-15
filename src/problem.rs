@@ -3,25 +3,27 @@ use rustc_hash::FxHashMap;
 use std::collections::HashSet;
 use std::hash::Hash;
 
-pub(crate) struct Problem<'a, L, T> {
-    headers: FxHashMap<T, Node<'a>>,
-    arena: &'a NodeArena<'a>,
-    pub(crate) root: Node<'a>,
+pub(crate) struct Problem<L, T> {
+    headers: FxHashMap<T, Node>,
+    pub(crate) arena: NodeArena,
+    pub(crate) root: Node,
     pub(crate) labels: Vec<L>,
 }
 
-impl<'a, L, T> Problem<'a, L, T> {
-    pub(crate) fn new(arena: &'a NodeArena<'a>) -> Self {
+impl<L, T> Problem<L, T> {
+    pub(crate) fn new() -> Self {
+        let mut arena = NodeArena::new();
+        let root = arena.alloc_header();
         Problem {
             headers: FxHashMap::default(),
             arena,
-            root: arena.alloc_header(),
+            root,
             labels: Vec::new(),
         }
     }
 }
 
-impl<'a, L, T> Problem<'a, L, T>
+impl<L, T> Problem<L, T>
 where
     T: Hash + Eq,
 {
@@ -33,18 +35,18 @@ where
         for elem in subset {
             let col_header = *self.headers.entry(elem).or_insert_with(|| {
                 let header = self.arena.alloc_header();
-                self.root.insert_left(header);
+                self.root.insert_left(header, &mut self.arena);
                 header
             });
             let node = self.arena.alloc(col_header, row_ix);
 
             if let Some(row_header) = row_header {
-                row_header.insert_left(node);
+                row_header.insert_left(node, &mut self.arena);
             } else {
                 row_header = Some(node);
             }
-            col_header.insert_up(node);
-            col_header.inc_size();
+            col_header.insert_up(node, &mut self.arena);
+            col_header.inc_size(&mut self.arena);
         }
     }
 }

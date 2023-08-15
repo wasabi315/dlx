@@ -1,30 +1,30 @@
+use id_arena::{Arena, Id};
 use paste::paste;
 use std::cell::Cell;
-use typed_arena::Arena;
 
-#[derive(Clone, Copy)]
-pub(crate) struct Node<'a>(&'a NodeData<'a>);
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct Node(Id<NodeData>);
 
-struct NodeData<'a> {
-    up: Cell<Option<Node<'a>>>,
-    down: Cell<Option<Node<'a>>>,
-    left: Cell<Option<Node<'a>>>,
-    right: Cell<Option<Node<'a>>>,
+struct NodeData {
+    up: Cell<Option<Node>>,
+    down: Cell<Option<Node>>,
+    left: Cell<Option<Node>>,
+    right: Cell<Option<Node>>,
     // None if being a column header, otherwise Some(its column header)
-    header: Option<Node<'a>>,
+    header: Option<Node>,
     // the number of nodes in the column if being a column header, otherwise the row index
     size_or_ix: Cell<usize>,
 }
 
 #[derive(Default)]
-pub(crate) struct NodeArena<'a>(Arena<NodeData<'a>>);
+pub(crate) struct NodeArena(Arena<NodeData>);
 
-impl<'a> NodeArena<'a> {
+impl NodeArena {
     pub(crate) fn new() -> Self {
         NodeArena(Arena::new())
     }
 
-    pub(crate) fn alloc_header(&'a self) -> Node<'a> {
+    pub(crate) fn alloc_header(&mut self) -> Node {
         let node = Node(self.0.alloc(NodeData {
             up: Cell::new(None),
             down: Cell::new(None),
@@ -33,14 +33,14 @@ impl<'a> NodeArena<'a> {
             header: None,
             size_or_ix: Cell::new(0),
         }));
-        node.set_up(node);
-        node.set_down(node);
-        node.set_left(node);
-        node.set_right(node);
+        node.set_up(node, self);
+        node.set_down(node, self);
+        node.set_left(node, self);
+        node.set_right(node, self);
         node
     }
 
-    pub(crate) fn alloc(&'a self, header: Node<'a>, row_ix: usize) -> Node<'a> {
+    pub(crate) fn alloc(&mut self, header: Node, row_ix: usize) -> Node {
         let node = Node(self.0.alloc(NodeData {
             up: Cell::new(None),
             down: Cell::new(None),
@@ -49,30 +49,24 @@ impl<'a> NodeArena<'a> {
             header: Some(header),
             size_or_ix: Cell::new(row_ix),
         }));
-        node.set_up(node);
-        node.set_down(node);
-        node.set_left(node);
-        node.set_right(node);
+        node.set_up(node, self);
+        node.set_down(node, self);
+        node.set_left(node, self);
+        node.set_right(node, self);
         node
-    }
-}
-
-impl<'a> PartialEq for Node<'a> {
-    fn eq(&self, other: &Node<'a>) -> bool {
-        std::ptr::eq(self.0, other.0)
     }
 }
 
 macro_rules! define_node_accessors {
     ($field:ident) => {
         paste! {
-            impl<'a> Node<'a> {
-                pub(crate) fn $field(&self) -> Node<'a> {
-                    self.0.$field.get().unwrap()
+            impl Node {
+                pub(crate) fn $field(&self, arena: &NodeArena) -> Node {
+                    arena.0[self.0].$field.get().unwrap()
                 }
 
-                pub(crate) fn [<set_ $field>](&self, node: Node<'a>) {
-                    self.0.$field.set(Some(node));
+                pub(crate) fn [<set_ $field>](&self, node: Node, arena: &NodeArena) {
+                    arena.0[self.0].$field.set(Some(node))
                 }
             }
         }
@@ -84,97 +78,99 @@ define_node_accessors! { down }
 define_node_accessors! { left }
 define_node_accessors! { right }
 
-impl<'a> Node<'a> {
-    fn is_header(&self) -> bool {
-        self.0.header.is_none()
+impl Node {
+    fn is_header(&self, arena: &NodeArena) -> bool {
+        arena.0[self.0].header.is_none()
     }
 
-    pub(crate) fn header(&self) -> Node<'a> {
-        debug_assert!(!self.is_header());
-        self.0.header.unwrap()
+    pub(crate) fn header(&self, arena: &NodeArena) -> Node {
+        debug_assert!(!self.is_header(arena));
+        arena.0[self.0].header.unwrap()
     }
 
-    pub(crate) fn size(&self) -> usize {
-        debug_assert!(self.is_header());
-        self.0.size_or_ix.get()
+    pub(crate) fn size(&self, arena: &NodeArena) -> usize {
+        debug_assert!(self.is_header(arena));
+        arena.0[self.0].size_or_ix.get()
     }
 
-    pub(crate) fn inc_size(&self) {
-        debug_assert!(self.is_header());
-        let size = &self.0.size_or_ix;
+    pub(crate) fn inc_size(&self, arena: &NodeArena) {
+        debug_assert!(self.is_header(arena));
+        let size = &arena.0[self.0].size_or_ix;
         size.set(size.get() + 1);
     }
 
-    pub(crate) fn dec_size(&self) {
-        debug_assert!(self.is_header());
-        let size = &self.0.size_or_ix;
+    pub(crate) fn dec_size(&self, arena: &NodeArena) {
+        debug_assert!(self.is_header(arena));
+        let size = &arena.0[self.0].size_or_ix;
         size.set(size.get() - 1);
     }
 
-    pub(crate) fn ix(&self) -> usize {
-        debug_assert!(!self.is_header());
-        self.0.size_or_ix.get()
+    pub(crate) fn ix(&self, arena: &NodeArena) -> usize {
+        debug_assert!(!self.is_header(arena));
+        arena.0[self.0].size_or_ix.get()
     }
 
-    pub(crate) fn insert_up(&self, node: Node<'a>) {
-        node.set_down(*self);
-        node.set_up(self.up());
-        self.up().set_down(node);
-        self.set_up(node);
+    pub(crate) fn insert_up(&self, node: Node, arena: &NodeArena) {
+        node.set_down(*self, arena);
+        node.set_up(self.up(arena), arena);
+        self.up(arena).set_down(node, arena);
+        self.set_up(node, arena);
     }
 
-    pub(crate) fn insert_left(&self, node: Node<'a>) {
-        node.set_right(*self);
-        node.set_left(self.left());
-        self.left().set_right(node);
-        self.set_left(node);
+    pub(crate) fn insert_left(&self, node: Node, arena: &NodeArena) {
+        node.set_right(*self, arena);
+        node.set_left(self.left(arena), arena);
+        self.left(arena).set_right(node, arena);
+        self.set_left(node, arena);
     }
 
-    pub(crate) fn unlink_ud(&self) {
-        self.up().set_down(self.down());
-        self.down().set_up(self.up());
-        self.header().dec_size();
+    pub(crate) fn unlink_ud(&self, arena: &NodeArena) {
+        self.up(arena).set_down(self.down(arena), arena);
+        self.down(arena).set_up(self.up(arena), arena);
+        self.header(arena).dec_size(arena);
     }
 
-    pub(crate) fn unlink_lr(&self) {
-        self.left().set_right(self.right());
-        self.right().set_left(self.left());
+    pub(crate) fn unlink_lr(&self, arena: &NodeArena) {
+        self.left(arena).set_right(self.right(arena), arena);
+        self.right(arena).set_left(self.left(arena), arena);
     }
 
-    pub(crate) fn relink_ud(&self) {
-        self.up().set_down(*self);
-        self.down().set_up(*self);
-        self.header().inc_size();
+    pub(crate) fn relink_ud(&self, arena: &NodeArena) {
+        self.up(arena).set_down(*self, arena);
+        self.down(arena).set_up(*self, arena);
+        self.header(arena).inc_size(arena);
     }
 
-    pub(crate) fn relink_lr(&self) {
-        self.left().set_right(*self);
-        self.right().set_left(*self);
+    pub(crate) fn relink_lr(&self, arena: &NodeArena) {
+        self.left(arena).set_right(*self, arena);
+        self.right(arena).set_left(*self, arena);
     }
 }
 
 macro_rules! define_node_iterator {
     ($dir:ident) => {
         paste! {
-            impl<'a> Node<'a> {
-                pub(crate) fn [<iter_ $dir>](&self) -> impl Iterator<Item = Node<'a>> {
+            impl Node {
+                pub(crate) fn [<iter_ $dir>]<'a>(&'a self, arena: &'a NodeArena) -> impl Iterator<Item = Node> + 'a {
                     struct Iter<'a> {
-                        start: Node<'a>,
-                        next: Option<Node<'a>>,
+                        arena: &'a NodeArena,
+                        start: Node,
+                        next: Option<Node>,
                     }
 
                     impl<'a> Iterator for Iter<'a> {
-                        type Item = Node<'a>;
+                        type Item = Node;
 
                         fn next(&mut self) -> Option<Self::Item> {
                             let node = self.next?;
-                            let next = node.$dir();
+                            let next = node.$dir(self.arena);
                             self.next = (next != self.start).then_some(next);
                             Some(node)
                         }
                     }
 
                     Iter {
+                        arena,
                         start: *self,
                         next: Some(*self),
                     }

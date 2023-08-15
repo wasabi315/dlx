@@ -1,17 +1,22 @@
-use bit_set::BitSet;
-use std::ops::ControlFlow;
+use crate::node::NodeArena;
+
 use super::node::Node;
 use super::Problem;
+use bit_set::BitSet;
+use std::ops::ControlFlow;
 
-pub(crate) struct Solver<'a, L> {
-    dlx: Dlx<'a>,
+pub(crate) struct Solver<L> {
+    dlx: Dlx,
     labels: Vec<L>,
 }
 
-impl<'a, L> Solver<'a, L> {
-    pub(crate) fn new<T>(problem: Problem<'a, L, T>) -> Self {
+impl<L> Solver<L> {
+    pub(crate) fn new<T>(problem: Problem<L, T>) -> Self {
         Solver {
-            dlx: Dlx { root: problem.root },
+            dlx: Dlx {
+                arena: problem.arena,
+                root: problem.root,
+            },
             labels: problem.labels,
         }
     }
@@ -27,41 +32,50 @@ impl<'a, L> Solver<'a, L> {
     }
 }
 
-struct Dlx<'a> {
-    root: Node<'a>,
+struct Dlx {
+    arena: NodeArena,
+    root: Node,
 }
 
-impl<'a> Dlx<'a> {
+impl Dlx {
     fn is_solved(&self) -> bool {
-        self.root == self.root.right()
+        self.root == self.root.right(&self.arena)
     }
 
-    fn min_size_col(&self) -> Option<Node<'a>> {
-        let headers = self.root.iter_right().skip(1);
-        headers.min_by_key(|header| header.size())
+    fn min_size_col(&self) -> Option<Node> {
+        let headers = self.root.iter_right(&self.arena).skip(1);
+        headers.min_by_key(|header| header.size(&self.arena))
     }
 
-    fn cover(&self, selected_node: Node<'a>) {
-        for node in selected_node.iter_right() {
-            let header = node.header();
-            header.unlink_lr();
+    fn cover(&self, selected_node: Node) {
+        for node in selected_node.iter_right(&self.arena) {
+            let header = node.header(&self.arena);
+            header.unlink_lr(&self.arena);
 
-            for col_node in node.iter_down().skip(1).filter(|node| node != &header) {
-                for row_node in col_node.iter_right().skip(1) {
-                    row_node.unlink_ud();
+            for col_node in node
+                .iter_down(&self.arena)
+                .skip(1)
+                .filter(|node| node != &header)
+            {
+                for row_node in col_node.iter_right(&self.arena).skip(1) {
+                    row_node.unlink_ud(&self.arena);
                 }
             }
         }
     }
 
-    fn uncover(&self, selected_node: Node<'a>) {
-        for node in selected_node.left().iter_left() {
-            let header = node.header();
-            header.relink_lr();
+    fn uncover(&self, selected_node: Node) {
+        for node in selected_node.left(&self.arena).iter_left(&self.arena) {
+            let header = node.header(&self.arena);
+            header.relink_lr(&self.arena);
 
-            for col_node in node.iter_up().skip(1).filter(|node| node != &header) {
-                for row_node in col_node.iter_left().skip(1) {
-                    row_node.relink_ud();
+            for col_node in node
+                .iter_up(&self.arena)
+                .skip(1)
+                .filter(|node| node != &header)
+            {
+                for row_node in col_node.iter_left(&self.arena).skip(1) {
+                    row_node.relink_ud(&self.arena);
                 }
             }
         }
@@ -75,8 +89,8 @@ impl<'a> Dlx<'a> {
 
             let header = dlx.min_size_col().unwrap();
 
-            for node in header.iter_down().skip(1) {
-                let ix = node.ix();
+            for node in header.iter_down(&dlx.arena).skip(1) {
+                let ix = node.ix(&dlx.arena);
                 label_indices.insert(ix);
                 dlx.cover(node);
 
