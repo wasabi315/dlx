@@ -6,10 +6,10 @@ use std::cell::Cell;
 pub(crate) struct Node(Id<NodeData>);
 
 struct NodeData {
-    up: Cell<Option<Node>>,
-    down: Cell<Option<Node>>,
-    left: Cell<Option<Node>>,
-    right: Cell<Option<Node>>,
+    up: Cell<Node>,
+    down: Cell<Node>,
+    left: Cell<Node>,
+    right: Cell<Node>,
     // None if being a column header, otherwise Some(its column header)
     header: Option<Node>,
     // the number of nodes in the column if being a column header, otherwise the row index
@@ -25,35 +25,31 @@ impl NodeArena {
     }
 
     pub(crate) fn alloc_header(&mut self) -> Node {
-        let node = Node(self.0.alloc(NodeData {
-            up: Cell::new(None),
-            down: Cell::new(None),
-            left: Cell::new(None),
-            right: Cell::new(None),
-            header: None,
-            size_or_ix: Cell::new(0),
-        }));
-        node.set_up(node, self);
-        node.set_down(node, self);
-        node.set_left(node, self);
-        node.set_right(node, self);
-        node
+        Node(self.0.alloc_with_id(|id| {
+            let id = Node(id);
+            NodeData {
+                up: Cell::new(id),
+                down: Cell::new(id),
+                left: Cell::new(id),
+                right: Cell::new(id),
+                header: None,
+                size_or_ix: Cell::new(0),
+            }
+        }))
     }
 
     pub(crate) fn alloc(&mut self, header: Node, row_ix: usize) -> Node {
-        let node = Node(self.0.alloc(NodeData {
-            up: Cell::new(None),
-            down: Cell::new(None),
-            left: Cell::new(None),
-            right: Cell::new(None),
-            header: Some(header),
-            size_or_ix: Cell::new(row_ix),
-        }));
-        node.set_up(node, self);
-        node.set_down(node, self);
-        node.set_left(node, self);
-        node.set_right(node, self);
-        node
+        Node(self.0.alloc_with_id(|id| {
+            let id = Node(id);
+            NodeData {
+                up: Cell::new(id),
+                down: Cell::new(id),
+                left: Cell::new(id),
+                right: Cell::new(id),
+                header: Some(header),
+                size_or_ix: Cell::new(row_ix),
+            }
+        }))
     }
 }
 
@@ -62,11 +58,11 @@ macro_rules! define_node_accessors {
         paste! {
             impl Node {
                 pub(crate) fn $field(&self, arena: &NodeArena) -> Node {
-                    arena.0[self.0].$field.get().unwrap()
+                    arena.0[self.0].$field.get()
                 }
 
                 pub(crate) fn [<set_ $field>](&self, node: Node, arena: &NodeArena) {
-                    arena.0[self.0].$field.set(Some(node))
+                    arena.0[self.0].$field.set(node)
                 }
             }
         }
